@@ -1,3 +1,4 @@
+// The implementation of an m,n,k-game with swappable Agents
 package main
 
 import (
