@@ -6,6 +6,7 @@ import (
 	"strconv"
 )
 
+// TODO: Tryout Gomoku: 19,19,5-game
 const dimensions int = 3 // had to be int for compatibility
 const inarow int = 3
 
@@ -14,7 +15,7 @@ var players = []Agent{
 	NewHumanAgent("\033[36;1mX\033[0m"),
 	NewHumanAgent("\033[31;1mO\033[0m"),
 }
-
+var rounds int
 var board [][]int
 var flags = make(map[string]bool)
 
@@ -25,25 +26,77 @@ type Agent interface {
 
 func main() {
 	// Make a 2D slice, limited to dimensions
+	initBoard()
+
+	fmt.Println("Tic-Tac-Toe v1")
+	fmt.Printf("_ > How many rounds shall we play? ")
+	_, err := fmt.Scanln(&rounds)
+	if err != nil {
+		fmt.Println("\n[error] Shit happened!")
+		panic(err)
+	}
+	fmt.Println("Great! Have fun.")
+
+	var log = make([]int, 3)
+	for c, turn := 1, 1; c <= rounds; c++ {
+		// Start a new round and get the winner's id
+		turn = newRound(turn) // Previous round's winner starts the game
+		log[turn]++
+		if turn == 0 { // If it was a draw, next player starts the game
+			turn = getNextPlayer(turn)
+		}
+
+		if rounds > 1 {
+			fmt.Print("___________________________________\n\n")
+		}
+	}
+
+	fmt.Printf("Stats: %s/%s/Draw = %d/%d/%d\nOverall winner: %s\n",
+		players[1].GetSign(), players[2].GetSign(), log[1], log[2], log[0],
+		players[max(log)].GetSign())
+}
+
+// Get the key of the maximum array item
+func max(arr []int) (key int) {
+	var m int
+	for i := range arr {
+		if arr[i] > m {
+			m = arr[i]
+			key = i
+		}
+	}
+	return
+}
+
+// Initialize empty board ([[0 0 0] [0 0 0] [0 0 0]])
+func initBoard() {
 	board = make([][]int, dimensions)
 	for i := range board {
 		board[i] = make([]int, dimensions)
 	}
+}
 
-	// Set initial Flags
+// newRound starts a new round
+func newRound(turn int) int {
+	// Reset board
+	initBoard()
+
+	// Set flags
 	flags["first_run"] = true
 
-	fmt.Println("Tic-Tac-Toe v1")
-	fmt.Println("Have fun!")
-
+	// Draw a new board
 	display(board)
 
-	var turn = 1
+	// Who starts the game if not specified
+	if turn == 0 {
+		turn = 1
+	}
 
+	// Start the game
 	for {
 		pos, err := players[turn].FetchMove()
 		if err != nil {
-			fmt.Println("[error] Shit happened!")
+			fmt.Println("\n\n[error] Shit happened!")
 			panic(err)
 		}
 
@@ -53,23 +106,24 @@ func main() {
 			fmt.Print("             ")
 			display(board)
 			var result = evaluate(board)
-			if result == 0 {
+			if result == 0 { // The game goes on
 				turn = getNextPlayer(turn)
 
-			} else if result == -1 {
+			} else if result == -1 { // Draw
 				fmt.Print("\n                         \r")
 				fmt.Println("It's a DRAW!")
-				break
+				return 0
 
-			} else {
+			} else { // Someone won
 				fmt.Printf("\nWe have a WINNER! Congratulations %s\n",
-					players[result])
-				break
+					players[result].GetSign())
+				return result
 			}
 		}
 	}
 }
 
+// display draws the board on the terminal
 func display(board [][]int) {
 	var mark string
 
@@ -111,6 +165,7 @@ func display(board [][]int) {
 	}
 }
 
+// move registers a move on the board
 func move(player int, pos int) bool {
 	if pos > dimensions*dimensions {
 		return false
@@ -127,10 +182,10 @@ func move(player int, pos int) bool {
 	return true
 }
 
-// Return values:
+// Evaluates the board and returns
 //   -1: Draw
 //    0: Game continues
-//   >1: Winner's index
+//   >1: Winner's id
 func evaluate(board [][]int) int {
 	var b = board
 	var d = dimensions
@@ -176,6 +231,7 @@ func evaluate(board [][]int) int {
 	return -1
 }
 
+// getNextPlayer returns the next player's id
 func getNextPlayer(current int) int {
 	if current < len(players)-1 {
 		return current + 1
