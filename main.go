@@ -8,13 +8,19 @@ import (
 const dimensions int = 3 // had to be int for compatibility
 const inarow int = 3
 
-var players = []string{
-	"", // No one
-	"\033[36;1mX\033[0m",
-	"\033[31;1mO\033[0m"}
+var players = []Agent{
+	nil, // No one
+	NewHumanAgent("\033[36;1mX\033[0m"),
+	NewHumanAgent("\033[31;1mO\033[0m"),
+}
 
 var board [][]int
 var flags = make(map[string]bool)
+
+type Agent interface {
+	FetchMove() (int, error)
+	GetSign() string
+}
 
 func main() {
 	// Make a 2D slice, limited to dimensions
@@ -32,19 +38,13 @@ func main() {
 	display(board)
 
 	var turn = 1
-	var pos int
 
 	for {
-		fmt.Print("\n                         \r")
-		fmt.Printf("%s > Your move? ", players[turn])
-
-		_, err := fmt.Scanln(&pos)
+		pos, err := players[turn].FetchMove()
 		if err != nil {
-			fmt.Println("[error] Shit happend!")
+			fmt.Println("[error] Shit happened!")
 			panic(err)
 		}
-
-		fmt.Print("\r\033[F\033[F")
 
 		if !move(turn, pos) {
 			fmt.Print("Invalid move!")
@@ -97,7 +97,7 @@ func display(board [][]int) {
 			if board[i][j] == 0 {
 				mark = "\033[37m" + strconv.Itoa(i*dimensions+j+1) + "\033[0m"
 			} else {
-				mark = players[board[i][j]]
+				mark = players[board[i][j]].GetSign()
 			}
 			fmt.Printf("  %s  ", mark)
 		}
