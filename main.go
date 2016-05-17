@@ -63,8 +63,8 @@ func init() {
 		"stats in training mode")
 
 	// RL flags
-	flag.StringVar(&rlModelFile, "rl-model", "store.kw", "RL trained model "+
-		"file location")
+	flag.StringVar(&rlModelFile, "rl-model", "rl.kw", "RL trained model file "+
+		"location")
 	flag.BoolVar(&rlModelStatusMode, "rl-model-status", false, "RL trained "+
 		"model status")
 	flag.BoolVar(&rlNoLearn, "rl-no-learn", false, "Turn off learning for RL "+
