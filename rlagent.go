@@ -186,7 +186,7 @@ func (agent *RLAgent) enumerateStates(state [][]int, idx int, player int) {
 func (k *RLAgentKnowledge) saveToFile(path string) bool {
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
-		fmt.Println("[error] Could not open knowledge file on disk!")
+		fmt.Println("[error] Could not open writable knowledge file on disk!")
 		fmt.Println(err)
 		return false
 	}
@@ -207,7 +207,7 @@ func (k *RLAgentKnowledge) saveToFile(path string) bool {
 func (k *RLAgentKnowledge) loadFromFile(path string) bool {
 	file, err := os.Open(path)
 	if err != nil {
-		fmt.Println("[error] Could not open knowledge file on disk!")
+		fmt.Println("[error] Could not open readable knowledge file on disk!")
 		fmt.Println(err)
 		return false
 	}
