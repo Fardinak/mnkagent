@@ -3,16 +3,22 @@ package main
 import "fmt"
 
 type HumanAgent struct {
+	id   int
 	Sign string
 }
 
-func NewHumanAgent(sign string) (agent *HumanAgent) {
+func NewHumanAgent(id int, sign string) (agent *HumanAgent) {
 	agent = new(HumanAgent)
+	agent.id = id
 	agent.Sign = sign
 	return
 }
 
-func (agent *HumanAgent) FetchMove() (pos int, err error) {
+func (agent *HumanAgent) FetchMessage() string {
+	return "-"
+}
+
+func (agent *HumanAgent) FetchMove(state [][]int) (pos int, err error) {
 	fmt.Print("\n                         \r")
 	fmt.Printf("%s > Your move? ", agent.Sign)
 
@@ -22,6 +28,8 @@ func (agent *HumanAgent) FetchMove() (pos int, err error) {
 
 	return
 }
+
+func (agent *HumanAgent) GameOver(state [][]int) {}
 
 func (agent *HumanAgent) GetSign() string {
 	return agent.Sign

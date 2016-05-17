@@ -1,35 +1,81 @@
 // The implementation of an m,n,k-game with swappable Agents
 package main
 
+// TODO: Tryout Gomoku: 19,19,5-game
+
 import (
+	"encoding/gob"
+	"flag"
 	"fmt"
+	"math/rand"
+	"os"
 	"strconv"
+	"time"
 )
 
-// TODO: Tryout Gomoku: 19,19,5-game
+// Flags
+var tmod bool
+
 const dimensions int = 3 // had to be int for compatibility
 const inarow int = 3
+const (
+	X = "\033[36;1mX\033[0m"
+	O = "\033[31;1mO\033[0m"
+)
 
-var players = []Agent{
+var players = [3]Agent{
 	nil, // No one
-	NewHumanAgent("\033[36;1mX\033[0m"),
-	NewHumanAgent("\033[31;1mO\033[0m"),
+	NewHumanAgent(1, X),
+	NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge),
 }
 var rounds int
 var board [][]int
 var flags = make(map[string]bool)
+var log []int
+var knowledge = make(map[string]float64)
 
 type Agent interface {
-	FetchMove() (int, error)
+	// FetchMessage returns agent's messages, if any
+	FetchMessage() string
+
+	// FetchMove returns the agent's move based on given state
+	FetchMove([][]int) (int, error)
+
+	// GameOver states that the game is over and that the latest state should be saved
+	GameOver([][]int)
+
+	// GetSign returns the agent's sign (X|O)
 	GetSign() string
 }
 
+func init() {
+	// Flags
+	flag.BoolVar(&tmod, "train", false, "Training mode")
+
+	flag.Parse()
+}
+
 func main() {
+	rand.Seed(time.Now().UTC().UnixNano())
+	retrieveKnowledge()
+
 	// Make a 2D slice, limited to dimensions
 	initBoard()
 
 	fmt.Println("Tic-Tac-Toe v1")
-	fmt.Printf("_ > How many rounds shall we play? ")
+
+	if tmod {
+		fmt.Printf("? > How many rounds should I train for? ")
+		_, err := fmt.Scanln(&rounds)
+		if err != nil {
+			fmt.Println("\n[error] Shit happened!")
+			panic(err)
+		}
+		train(rounds)
+		fmt.Print("___________________________________\n\n")
+	}
+
+	fmt.Printf("? > How many rounds shall we play? ")
 	_, err := fmt.Scanln(&rounds)
 	if err != nil {
 		fmt.Println("\n[error] Shit happened!")
@@ -37,7 +83,10 @@ func main() {
 	}
 	fmt.Println("Great! Have fun.")
 
-	var log = make([]int, 3)
+	players[1] = NewHumanAgent(1, X)
+	players[2] = NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge)
+
+	log = make([]int, 3)
 	for c, turn := 1, 1; c <= rounds; c++ {
 		// Start a new round and get the winner's id
 		turn = newRound(turn) // Previous round's winner starts the game
@@ -46,34 +95,34 @@ func main() {
 			turn = getNextPlayer(turn)
 		}
 
-		if rounds > 1 {
-			fmt.Print("___________________________________\n\n")
-		}
+		fmt.Print("___________________________________\n\n")
 	}
 
-	fmt.Printf("Stats: %s/%s/Draw = %d/%d/%d\nOverall winner: %s\n",
-		players[1].GetSign(), players[2].GetSign(), log[1], log[2], log[0],
-		players[max(log)].GetSign())
+	printStats(log)
+	storeKnowledge()
 }
 
-// Get the key of the maximum array item
-func max(arr []int) (key int) {
-	var m int
-	for i := range arr {
-		if arr[i] > m {
-			m = arr[i]
-			key = i
-		}
-	}
-	return
-}
+// train initiates training for given rounds
+func train(round int) {
+	fmt.Println("Commencing training...")
 
-// Initialize empty board ([[0 0 0] [0 0 0] [0 0 0]])
-func initBoard() {
-	board = make([][]int, dimensions)
-	for i := range board {
-		board[i] = make([]int, dimensions)
+	players[1] = NewRLAgent(1, X, dimensions, dimensions, inarow, knowledge)
+	players[2] = NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge)
+
+	log = make([]int, 3)
+	for c, turn := 1, 1; c <= rounds; c++ {
+		// Start a new round and get the winner's id
+		turn = newRound(turn) // Previous round's winner starts the game
+		log[turn]++
+		if turn == 0 { // If it was a draw, next player starts the game
+			turn = getNextPlayer(turn)
+		}
+
+		fmt.Print("___________________________________\n\n")
 	}
+
+	printStats(log)
+	storeKnowledge()
 }
 
 // newRound starts a new round
@@ -81,7 +130,7 @@ func newRound(turn int) int {
 	// Reset board
 	initBoard()
 
-	// Set flags
+	// Set runtime flags
 	flags["first_run"] = true
 
 	// Draw a new board
@@ -94,29 +143,42 @@ func newRound(turn int) int {
 
 	// Start the game
 	for {
-		pos, err := players[turn].FetchMove()
+		pos, err := players[turn].FetchMove(board)
 		if err != nil {
 			fmt.Println("\n\n[error] Shit happened!")
 			panic(err)
 		}
 
 		if !move(turn, pos) {
-			fmt.Print("Invalid move!")
+			fmt.Print("Invalid move!                      ")
 		} else {
-			fmt.Print("             ")
+			// Clear previous messages
+			fmt.Print("                                   \r")
+			fmt.Printf("Agent %s: %s / Agent %s: %s",
+				players[1].GetSign(), players[1].FetchMessage(),
+				players[2].GetSign(), players[2].FetchMessage())
+
 			display(board)
 			var result = evaluate(board)
 			if result == 0 { // The game goes on
 				turn = getNextPlayer(turn)
 
 			} else if result == -1 { // Draw
+				// Clear prompt
 				fmt.Print("\n                         \r")
 				fmt.Println("It's a DRAW!")
+
+				players[1].GameOver(board)
+				players[2].GameOver(board)
 				return 0
 
 			} else { // Someone won
-				fmt.Printf("\nWe have a WINNER! Congratulations %s\n",
+				fmt.Print("                                   \n")
+				fmt.Printf("We have a WINNER! Congratulations %s\n",
 					players[result].GetSign())
+
+				players[1].GameOver(board)
+				players[2].GameOver(board)
 				return result
 			}
 		}
@@ -163,6 +225,20 @@ func display(board [][]int) {
 				"\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u255d\n")
 		}
 	}
+}
+
+// printStats prints out statistics of given game log
+func printStats(log []int) {
+	var winnerSign string
+	winner := max(log)
+	if winner == 0 {
+		winnerSign = "DRAW"
+	} else {
+		winnerSign = players[winner].GetSign()
+	}
+	fmt.Printf("Stats: %s/%s/Draw = %d/%d/%d\nOverall winner: %s\n",
+		players[1].GetSign(), players[2].GetSign(), log[1], log[2], log[0],
+		winnerSign)
 }
 
 // move registers a move on the board
@@ -237,4 +313,62 @@ func getNextPlayer(current int) int {
 		return current + 1
 	}
 	return 1
+}
+
+// Initialize empty board ([[0 0 0] [0 0 0] [0 0 0]])
+func initBoard() {
+	board = make([][]int, dimensions)
+	for i := range board {
+		board[i] = make([]int, dimensions)
+	}
+}
+
+// Get the key of the maximum array item
+func max(arr []int) (key int) {
+	var max int
+	for i := range arr {
+		if arr[i] > max {
+			max = arr[i]
+			key = i
+		}
+	}
+	return
+}
+
+// storeKnowledge writes the knowledge map to a file (store.kw)
+func storeKnowledge() {
+	file, err := os.OpenFile("store.kw", os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		fmt.Println("Could not open knowledge file on disk!")
+		fmt.Println(err)
+		return
+	}
+	defer file.Close()
+
+	enc := gob.NewEncoder(file)
+	err = enc.Encode(knowledge)
+	if err != nil {
+		fmt.Println("Encoding of knowledge failed!")
+		fmt.Println(err)
+		return
+	}
+}
+
+// retrieveKnowledge reads the knowledge from file (store.kw) to knowledge map
+func retrieveKnowledge() {
+	file, err := os.Open("store.kw")
+	if err != nil {
+		fmt.Println("Could not open knowledge file on disk!")
+		fmt.Println(err)
+		return
+	}
+	defer file.Close()
+
+	dec := gob.NewDecoder(file)
+	err = dec.Decode(&knowledge)
+	if err != nil {
+		fmt.Println("Decoding of knowledge failed!")
+		fmt.Println(err)
+		return
+	}
 }
