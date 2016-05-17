@@ -55,10 +55,10 @@ func NewRLAgent(id int, sign string, m, n, k int, learn bool) (agent *RLAgent) {
 	agent.LossValue = -1
 
 	// Initiate stash
-	agent.values = rlKnowledge.Values
 	if rlKnowledge.Iterations == 0 {
 		rlKnowledge.Values = make(map[string]float64)
 	}
+	agent.values = rlKnowledge.Values
 
 	return
 }
