@@ -119,7 +119,9 @@ func (agent *RLAgent) FetchMove(state [][]int) (pos int, err error) {
 		moveValue = maxVal
 	}
 
-	agent.learn(moveValue)
+	if agent.Learning {
+		agent.learn(moveValue)
+	}
 
 	agent.prevState = copyState(state)
 	agent.prevState[(pos-1)/agent.m][(pos-1)%agent.m] = agent.id
@@ -129,7 +131,10 @@ func (agent *RLAgent) FetchMove(state [][]int) (pos int, err error) {
 }
 
 func (agent *RLAgent) GameOver(state [][]int) {
-	agent.learn(agent.value(state))
+	if agent.Learning {
+		agent.learn(agent.value(state))
+	}
+
 	rlKnowledge.Iterations++
 }
 
@@ -139,10 +144,8 @@ func (agent *RLAgent) GetSign() string {
 
 // learn calculates new value for given state if agent is in learning mode
 func (agent *RLAgent) learn(value float64) {
-	if agent.Learning {
-		agent.values[marshallState(agent.prevState, agent.id)] += agent.LearningRate *
-			(value - agent.prevScore)
-	}
+	agent.values[marshallState(agent.prevState, agent.id)] += agent.LearningRate *
+		(value - agent.prevScore)
 }
 
 // Return score for a certain state
