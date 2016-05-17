@@ -26,13 +26,16 @@ const (
 var players = [3]Agent{
 	nil, // No one
 	NewHumanAgent(1, X),
-	NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge),
+	NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge.Values),
 }
 var rounds int
 var board [][]int
 var flags = make(map[string]bool)
 var log []int
-var knowledge = make(map[string]float64)
+var knowledge struct {
+	Values     map[string]float64
+	Iterations uint
+}
 
 type Agent interface {
 	// FetchMessage returns agent's messages, if any
@@ -57,6 +60,7 @@ func init() {
 
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
+	knowledge.Values = make(map[string]float64)
 	retrieveKnowledge()
 
 	// Make a 2D slice, limited to dimensions
@@ -84,7 +88,7 @@ func main() {
 	fmt.Println("Great! Have fun.")
 
 	players[1] = NewHumanAgent(1, X)
-	players[2] = NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge)
+	players[2] = NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge.Values)
 
 	log = make([]int, 3)
 	for c, turn := 1, 1; c <= rounds; c++ {
@@ -106,8 +110,8 @@ func main() {
 func train(round int) {
 	fmt.Println("Commencing training...")
 
-	players[1] = NewRLAgent(1, X, dimensions, dimensions, inarow, knowledge)
-	players[2] = NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge)
+	players[1] = NewRLAgent(1, X, dimensions, dimensions, inarow, knowledge.Values)
+	players[2] = NewRLAgent(2, O, dimensions, dimensions, inarow, knowledge.Values)
 
 	log = make([]int, 3)
 	for c, turn := 1, 1; c <= rounds; c++ {
@@ -147,6 +151,13 @@ func newRound(turn int) int {
 		if err != nil {
 			fmt.Println("\n\n[error] Shit happened!")
 			panic(err)
+		}
+
+		// Record RLAgent's move count
+		switch players[turn].(type) {
+		case *RLAgent:
+			knowledge.Iterations++
+			break
 		}
 
 		if !move(turn, pos) {
