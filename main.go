@@ -16,6 +16,7 @@ import (
 var (
 	// Game flags
 	// TODO: dx, dy, inarow
+	noDisplay bool
 
 	// RL flags
 	rlModelFile       string
@@ -57,7 +58,11 @@ type Agent interface {
 }
 
 func init() {
-	// Flags
+	// Game flags
+	flag.BoolVar(&noDisplay, "no-display", false, "Do now show board and "+
+		"stats in training mode")
+
+	// RL flags
 	flag.StringVar(&rlModelFile, "rl-model", "store.kw", "RL trained model "+
 		"file location")
 	flag.BoolVar(&rlModelStatusMode, "rl-model-status", false, "RL trained "+
@@ -134,13 +139,15 @@ func train(rounds uint) (log []int) {
 	var turn int
 	for c, turn = 1, 1; c <= rounds; c++ {
 		// Start a new round and get the winner's id
-		turn = newRound(turn) // Previous round's winner starts the game
-		log[turn]++           // Keep scores
-		if turn == 0 {        // If it was a draw, next player starts the game
+		turn = newRound(turn, !noDisplay) // Previous round's winner starts the game
+		log[turn]++                       // Keep scores
+		if turn == 0 {                    // If it was a draw, next player starts the game
 			turn = getNextPlayer(turn)
 		}
 
-		fmt.Print("___________________________________\n\n")
+		if !noDisplay {
+			fmt.Print("___________________________________\n\n")
+		}
 
 		if !rlNoLearn && c%1000 == 0 { // Store knowledge every 1K rounds
 			rlKnowledge.saveToFile(rlModelFile)
@@ -166,9 +173,9 @@ func play(rounds int) (log []int) {
 
 	for c, turn := 1, 1; c <= rounds; c++ {
 		// Start a new round and get the winner's id
-		turn = newRound(turn) // Previous round's winner starts the game
-		log[turn]++           // Keep scores
-		if turn == 0 {        // If it was a draw, next player starts the game
+		turn = newRound(turn, true) // Previous round's winner starts the game
+		log[turn]++                 // Keep scores
+		if turn == 0 {              // If it was a draw, next player starts the game
 			turn = getNextPlayer(turn)
 		}
 
@@ -182,15 +189,17 @@ func play(rounds int) (log []int) {
 }
 
 // newRound starts a new round
-func newRound(turn int) int {
+func newRound(turn int, visual bool) int {
 	// Reset board
 	initBoard(dimensions, dimensions)
 
 	// Set runtime flags
 	flags["first_run"] = true
 
-	// Draw a new board
-	display(board)
+	if visual {
+		// Draw a new board
+		display(board)
+	}
 
 	// Who starts the game if not specified
 	if turn == 0 {
@@ -208,30 +217,37 @@ func newRound(turn int) int {
 		if !move(turn, pos) {
 			fmt.Print("Invalid move!                      ")
 		} else {
-			// Clear previous messages
-			fmt.Print("                                   \r")
-			fmt.Printf("Agent %s: %s / Agent %s: %s",
-				players[1].GetSign(), players[1].FetchMessage(),
-				players[2].GetSign(), players[2].FetchMessage())
+			if visual {
+				// Clear previous messages
+				fmt.Print("                                   \r")
+				fmt.Printf("Agent %s: %s / Agent %s: %s",
+					players[1].GetSign(), players[1].FetchMessage(),
+					players[2].GetSign(), players[2].FetchMessage())
 
-			display(board)
+				display(board)
+			}
+
 			var result = evaluate(board)
 			if result == 0 { // The game goes on
 				turn = getNextPlayer(turn)
 
 			} else if result == -1 { // Draw
-				// Clear prompt
-				fmt.Print("\n                         \r")
-				fmt.Println("It's a DRAW!")
+				if visual {
+					// Clear prompt
+					fmt.Print("\n                         \r")
+					fmt.Println("It's a DRAW!")
+				}
 
 				players[1].GameOver(board)
 				players[2].GameOver(board)
 				return 0
 
 			} else { // Someone won
-				fmt.Print("                                   \n")
-				fmt.Printf("We have a WINNER! Congratulations %s\n",
-					players[result].GetSign())
+				if visual {
+					fmt.Print("                                   \n")
+					fmt.Printf("We have a WINNER! Congratulations %s\n",
+						players[result].GetSign())
+				}
 
 				players[1].GameOver(board)
 				players[2].GameOver(board)
