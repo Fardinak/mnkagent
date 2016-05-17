@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/gob"
 	"fmt"
 	"math/rand"
+	"os"
 )
 
 type RLAgent struct {
@@ -29,7 +31,14 @@ type RLAgent struct {
 	message   string
 }
 
-func NewRLAgent(id int, sign string, m, n, k int, vStore map[string]float64) (agent *RLAgent) {
+type RLAgentKnowledge struct {
+	Values     map[string]float64
+	Iterations uint
+}
+
+var rlKnowledge RLAgentKnowledge
+
+func NewRLAgent(id int, sign string, m, n, k int, learn bool) (agent *RLAgent) {
 	agent = new(RLAgent)
 	agent.id = id
 	agent.Sign = sign
@@ -39,14 +48,17 @@ func NewRLAgent(id int, sign string, m, n, k int, vStore map[string]float64) (ag
 	agent.k = k
 
 	// Default values
-	agent.Learning = true
+	agent.Learning = learn
 	agent.LearningRate = 0.2
 	agent.ExplorationFactor = 0.25
 	agent.MaxReward = 3
 	agent.LossValue = -1
 
 	// Initiate stash
-	agent.values = vStore
+	agent.values = rlKnowledge.Values
+	if rlKnowledge.Iterations == 0 {
+		rlKnowledge.Values = make(map[string]float64)
+	}
 
 	return
 }
@@ -118,6 +130,7 @@ func (agent *RLAgent) FetchMove(state [][]int) (pos int, err error) {
 
 func (agent *RLAgent) GameOver(state [][]int) {
 	agent.learn(agent.value(state))
+	rlKnowledge.Iterations++
 }
 
 func (agent *RLAgent) GetSign() string {
@@ -167,6 +180,48 @@ func (agent *RLAgent) enumerateStates(state [][]int, idx int, player int) {
 			state[i][j] = val
 		}
 	}
+}
+
+// storeKnowledge writes the knowledge map to given path
+func (k *RLAgentKnowledge) saveToFile(path string) bool {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		fmt.Println("[error] Could not open knowledge file on disk!")
+		fmt.Println(err)
+		return false
+	}
+	defer file.Close()
+
+	enc := gob.NewEncoder(file)
+	err = enc.Encode(rlKnowledge)
+	if err != nil {
+		fmt.Println("[error] Encoding of knowledge failed!")
+		fmt.Println(err)
+		return false
+	}
+
+	return true
+}
+
+// retrieveKnowledge reads the knowledge from given path to knowledge map
+func (k *RLAgentKnowledge) loadFromFile(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		fmt.Println("[error] Could not open knowledge file on disk!")
+		fmt.Println(err)
+		return false
+	}
+	defer file.Close()
+
+	dec := gob.NewDecoder(file)
+	err = dec.Decode(&rlKnowledge)
+	if err != nil {
+		fmt.Println("[error] Decoding of knowledge failed!")
+		fmt.Println(err)
+		return false
+	}
+
+	return true
 }
 
 func marshallState(state [][]int, agentID int) (m string) {
