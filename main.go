@@ -15,6 +15,7 @@ import (
 
 // Flags
 var tmod bool
+var msts bool
 
 const dimensions int = 3 // had to be int for compatibility
 const inarow int = 3
@@ -54,6 +55,7 @@ type Agent interface {
 func init() {
 	// Flags
 	flag.BoolVar(&tmod, "train", false, "Training mode")
+	flag.BoolVar(&msts, "model-state", false, "Trained model status")
 
 	flag.Parse()
 }
@@ -62,6 +64,23 @@ func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 	knowledge.Values = make(map[string]float64)
 	retrieveKnowledge()
+
+	if msts {
+		fmt.Printf("Iterations: %d\n", knowledge.Iterations)
+		fmt.Printf("Learned states count: %d\n", len(knowledge.Values))
+		var max float64 = 0
+		var min float64 = 0
+		for _, v := range knowledge.Values {
+			if v > max {
+				max = v
+			} else if v < min {
+				min = v
+			}
+		}
+		fmt.Printf("Maximum value: %f\n", max)
+		fmt.Printf("Minimum value: %f\n", min)
+		return
+	}
 
 	// Make a 2D slice, limited to dimensions
 	initBoard()
