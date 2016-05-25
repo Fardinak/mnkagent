@@ -20,8 +20,8 @@ type RLAgent struct {
 	// RL parameters
 	Learning          bool
 	LearningRate      float64 //alpha
+	DiscountFactor    float64
 	ExplorationFactor float64 //epsilon
-	MaxReward         float64
 	LossValue         float64
 
 	// States stash
@@ -50,8 +50,8 @@ func NewRLAgent(id int, sign string, m, n, k int, learn bool) (agent *RLAgent) {
 	// Default values
 	agent.Learning = learn
 	agent.LearningRate = 0.2
+	agent.DiscountFactor = 0.8
 	agent.ExplorationFactor = 0.25
-	agent.MaxReward = 3
 	agent.LossValue = -1
 
 	// Initiate stash
@@ -69,7 +69,7 @@ func (agent *RLAgent) FetchMessage() (message string) {
 	return
 }
 
-func (agent *RLAgent) FetchMove(state [][]int) (pos int, err error) {
+func (agent *RLAgent) FetchMove(state [][]int) (move int, err error) {
 	var moveValue float64
 
 	var e = rand.Float64()
@@ -86,9 +86,9 @@ func (agent *RLAgent) FetchMove(state [][]int) (pos int, err error) {
 			}
 		}
 
-		pos = emptyCells[rand.Intn(len(emptyCells))]
-		var i = (pos - 1) / agent.m
-		var j = (pos - 1) % agent.m
+		move = emptyCells[rand.Intn(len(emptyCells))]
+		var i = (move - 1) / agent.m
+		var j = (move - 1) % agent.m
 		state[i][j] = agent.id
 		moveValue = agent.lookup(state)
 		state[i][j] = 0
@@ -97,26 +97,26 @@ func (agent *RLAgent) FetchMove(state [][]int) (pos int, err error) {
 		agent.message = fmt.Sprintf("Greedy action (%f)", e)
 
 		// Choose a greedy move
-		var maxVal float64 = -10000
-		var maxPos = 0
+		var maxReward float64 = -10000
+		var maxMove = 0
 
 		for i := range state {
 			for j := range state[i] {
 				if state[i][j] == 0 {
-					// REVIEW: Is tempState = copyState(state) too costly?
+					// REVIEW: Is tempState = copyState(state) too costly? Or perhaps do it in main
 					state[i][j] = agent.id
 					value := agent.lookup(state)
 					state[i][j] = 0
 
-					if value > maxVal {
-						maxVal = value
-						maxPos = i*agent.m + j + 1
+					if value > maxReward {
+						maxReward = value
+						maxMove = i*agent.m + j + 1
 					}
 				}
 			}
 		}
-		pos = maxPos
-		moveValue = maxVal
+		move = maxMove
+		moveValue = maxReward
 	}
 
 	if agent.Learning {
@@ -124,7 +124,7 @@ func (agent *RLAgent) FetchMove(state [][]int) (pos int, err error) {
 	}
 
 	agent.prevState = copyState(state)
-	agent.prevState[(pos-1)/agent.m][(pos-1)%agent.m] = agent.id
+	agent.prevState[(move-1)/agent.m][(move-1)%agent.m] = agent.id
 	agent.prevScore = moveValue
 
 	return
@@ -132,6 +132,7 @@ func (agent *RLAgent) FetchMove(state [][]int) (pos int, err error) {
 
 func (agent *RLAgent) GameOver(state [][]int) {
 	if agent.Learning {
+		// TODO: Check for prevState == state as well so we don't train twice
 		agent.learn(agent.value(state))
 	}
 
@@ -142,10 +143,14 @@ func (agent *RLAgent) GetSign() string {
 	return agent.Sign
 }
 
-// learn calculates new value for given state if agent is in learning mode
-func (agent *RLAgent) learn(value float64) {
-	agent.values[marshallState(agent.prevState, agent.id)] += agent.LearningRate *
-		(value - agent.prevScore)
+// learn calculates new value for given state
+func (agent *RLAgent) learn(reward float64) {
+	var mState = marshallState(agent.prevState, agent.id)
+	var oldVal = agent.values[mState]
+	// REVIEW: Learning Rate may decrease gradually (for stochastic environments)
+	// REVIEW: Discount Factor may increase gradually (when estimating reward)
+	agent.values[mState] += oldVal + agent.LearningRate*
+		(agent.prevScore+(agent.DiscountFactor*reward)-oldVal)
 }
 
 // Return score for a certain state
@@ -170,18 +175,6 @@ func (agent *RLAgent) value(state [][]int) float64 {
 		return 0
 	default: // Agent lost
 		return agent.LossValue
-	}
-}
-
-// Generate and store all winning states and assign values
-func (agent *RLAgent) enumerateStates(state [][]int, idx int, player int) {
-	if idx >= agent.m*agent.n {
-		// If last_to_act is agent add state
-	} else if evaluate(state) > 0 {
-		var i, j = idx / 3, idx % 3
-		for val := 0; val < 3; val++ {
-			state[i][j] = val
-		}
 	}
 }
 
