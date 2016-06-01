@@ -104,7 +104,7 @@ func main() {
 
 	if rlTrainingMode > 0 {
 		log := train(rlTrainingMode)
-		printStats(log)
+		printStats(log, true)
 		return
 	}
 
@@ -117,7 +117,7 @@ func main() {
 	fmt.Println("Great! Have fun.")
 
 	log := play(rounds)
-	printStats(log)
+	printStats(log, false)
 }
 
 // train initiates training for given rounds
@@ -307,7 +307,7 @@ func display(board [][]int) {
 }
 
 // printStats prints out statistics of given game log
-func printStats(log []int) {
+func printStats(log []int, rmd bool) {
 	var winnerSign string
 	winner := max(log)
 	if winner == 0 {
@@ -318,6 +318,13 @@ func printStats(log []int) {
 	fmt.Printf("Stats: %s/%s/Draw = %d/%d/%d\nOverall winner: %s\n",
 		players[1].GetSign(), players[2].GetSign(), log[1], log[2], log[0],
 		winnerSign)
+
+	if rmd {
+		fmt.Println("Random move dispersion:")
+		for i := 0; i < 9; i++ {
+			fmt.Printf("%d: %d\n", i+1, rlKnowledge.randomDispersion[i])
+		}
+	}
 }
 
 // move registers a move on the board
