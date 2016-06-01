@@ -22,18 +22,18 @@ type RLAgent struct {
 	LearningRate      float64 //alpha
 	DiscountFactor    float64
 	ExplorationFactor float64 //epsilon
-	LossValue         float64
 
 	// States stash
-	values    map[string]float64
-	prevState [][]int
-	prevScore float64
-	message   string
+	values          map[string]float64
+	prevStateAction [][]int
+	prevReward      float64
+	message         string
 }
 
 type RLAgentKnowledge struct {
-	Values     map[string]float64
-	Iterations uint
+	Values           map[string]float64
+	Iterations       uint
+	randomDispersion [9]int
 }
 
 var rlKnowledge RLAgentKnowledge
@@ -52,7 +52,6 @@ func NewRLAgent(id int, sign string, m, n, k int, learn bool) (agent *RLAgent) {
 	agent.LearningRate = 0.2
 	agent.DiscountFactor = 0.8
 	agent.ExplorationFactor = 0.25
-	agent.LossValue = -1
 
 	// Initiate stash
 	if rlKnowledge.Iterations == 0 {
@@ -87,6 +86,7 @@ func (agent *RLAgent) FetchMove(state [][]int) (move int, err error) {
 		}
 
 		move = emptyCells[rand.Intn(len(emptyCells))]
+		rlKnowledge.randomDispersion[move-1]++
 		var i = (move - 1) / agent.m
 		var j = (move - 1) % agent.m
 		state[i][j] = agent.id
@@ -97,8 +97,9 @@ func (agent *RLAgent) FetchMove(state [][]int) (move int, err error) {
 		agent.message = fmt.Sprintf("Greedy action (%f)", e)
 
 		// Choose a greedy move
-		var maxReward float64 = -10000
+		var maxReward float64 = 0
 		var maxMove = 0
+		var first = true
 
 		for i := range state {
 			for j := range state[i] {
@@ -108,9 +109,10 @@ func (agent *RLAgent) FetchMove(state [][]int) (move int, err error) {
 					value := agent.lookup(state)
 					state[i][j] = 0
 
-					if value > maxReward {
+					if value > maxReward || first {
 						maxReward = value
 						maxMove = i*agent.m + j + 1
+						first = false
 					}
 				}
 			}
@@ -123,16 +125,16 @@ func (agent *RLAgent) FetchMove(state [][]int) (move int, err error) {
 		agent.learn(moveValue)
 	}
 
-	agent.prevState = copyState(state)
-	agent.prevState[(move-1)/agent.m][(move-1)%agent.m] = agent.id
-	agent.prevScore = moveValue
+	agent.prevStateAction = copyState(state)
+	agent.prevStateAction[(move-1)/agent.m][(move-1)%agent.m] = agent.id
+	agent.prevReward = agent.value(agent.prevStateAction)
 
 	return
 }
 
 func (agent *RLAgent) GameOver(state [][]int) {
 	if agent.Learning {
-		// TODO: Check for prevState == state as well so we don't train twice
+		// TODO: Check for prevStateAction == state as well so we don't train twice
 		agent.learn(agent.value(state))
 	}
 
@@ -144,13 +146,15 @@ func (agent *RLAgent) GetSign() string {
 }
 
 // learn calculates new value for given state
-func (agent *RLAgent) learn(reward float64) {
-	var mState = marshallState(agent.prevState, agent.id)
+func (agent *RLAgent) learn(qMax float64) {
+	var mState = marshallState(agent.prevStateAction, agent.id)
 	var oldVal = agent.values[mState]
+
 	// REVIEW: Learning Rate may decrease gradually (for stochastic environments)
 	// REVIEW: Discount Factor may increase gradually (when estimating reward)
-	agent.values[mState] += oldVal + agent.LearningRate*
-		(agent.prevScore+(agent.DiscountFactor*reward)-oldVal)
+
+	agent.values[mState] = oldVal + (agent.LearningRate *
+		(agent.prevReward + (agent.DiscountFactor * qMax) - oldVal))
 }
 
 // Return score for a certain state
@@ -170,11 +174,11 @@ func (agent *RLAgent) value(state [][]int) float64 {
 	case agent.id: // Agent won
 		return 1
 	case 0: // Game goes on
-		return 0.5
-	case -1: // Draw
 		return 0
+	case -1: // Draw
+		return -0.5
 	default: // Agent lost
-		return agent.LossValue
+		return -1
 	}
 }
 

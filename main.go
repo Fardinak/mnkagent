@@ -153,9 +153,11 @@ func train(rounds uint) (log []int) {
 			rlKnowledge.saveToFile(rlModelFile)
 		}
 	}
+
 	if !rlNoLearn {
 		rlKnowledge.saveToFile(rlModelFile)
 	}
+
 	return
 }
 
@@ -258,6 +260,7 @@ func newRound(turn int, visual bool) int {
 }
 
 // display draws the board on the terminal
+// TODO: Move this to Human Agent
 func display(board [][]int) {
 	// TODO: Support dimensions
 	var mark string
