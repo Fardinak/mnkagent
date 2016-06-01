@@ -423,6 +423,8 @@ func max(arr []int) (key int) {
 
 // fileAccessible returns true if given path is writable
 func fileAccessible(path string) (err error) {
-	_, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
+	var f *os.File
+	f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
+	defer f.Close()
 	return
 }
