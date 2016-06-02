@@ -1,8 +1,6 @@
 // The implementation of an m,n,k-game with swappable Agents
 package main
 
-// NOTE: X Axis: j, m, dx; Y Axis: i, n, dy
-
 import (
 	"flag"
 	"fmt"
@@ -15,8 +13,8 @@ import (
 // Flags
 var (
 	// Game flags
-	dx        int
-	dy        int
+	m         int
+	n         int
 	inarow    int
 	noDisplay bool
 
@@ -36,7 +34,7 @@ const (
 var players = [3]Agent{
 	nil, // No one
 	NewHumanAgent(1, X),
-	NewRLAgent(2, O, dx, dy, inarow, !rlNoLearn),
+	NewRLAgent(2, O, m, n, inarow, !rlNoLearn),
 }
 var rounds int
 var board [][]int
@@ -58,8 +56,8 @@ type Agent interface {
 
 func init() {
 	// Game flags
-	flag.IntVar(&dx, "m", 3, "Board dimention across the horizontal (x) axis")
-	flag.IntVar(&dy, "n", 3, "Board dimention across the vertical (y) axis")
+	flag.IntVar(&m, "m", 3, "Board dimention across the horizontal (x) axis")
+	flag.IntVar(&n, "n", 3, "Board dimention across the vertical (y) axis")
 	flag.IntVar(&inarow, "k", 3, "Number of marks in a row")
 	flag.BoolVar(&noDisplay, "no-display", false, "Do now show board and "+
 		"stats in training mode")
@@ -79,9 +77,9 @@ func init() {
 func main() {
 	fmt.Println("Tic-Tac-Toe v1")
 
-	if inarow > dx && inarow > dy {
+	if inarow > m && inarow > n {
 		fmt.Printf("There can not exist %d marks in a row, on a %dx%d board",
-			inarow, dx, dy)
+			inarow, m, n)
 		os.Exit(1)
 	}
 
@@ -140,8 +138,8 @@ func train(rounds uint) (log []int) {
 		return
 	}
 
-	players[1] = NewRLAgent(1, X, dx, dy, inarow, true)
-	players[2] = NewRLAgent(2, O, dx, dy, inarow, true)
+	players[1] = NewRLAgent(1, X, m, n, inarow, true)
+	players[2] = NewRLAgent(2, O, m, n, inarow, true)
 
 	var c uint
 	var turn int
@@ -179,7 +177,7 @@ func play(rounds int) (log []int) {
 	}
 
 	players[1] = NewHumanAgent(1, X)
-	players[2] = NewRLAgent(2, O, dx, dy, inarow, !rlNoLearn)
+	players[2] = NewRLAgent(2, O, m, n, inarow, !rlNoLearn)
 
 	for c, turn := 1, 1; c <= rounds; c++ {
 		// Start a new round and get the winner's id
@@ -201,7 +199,7 @@ func play(rounds int) (log []int) {
 // newRound starts a new round
 func newRound(turn int, visual bool) int {
 	// Reset board
-	initBoard(dx, dy)
+	initBoard(m, n)
 
 	// Set runtime flags
 	flags["first_run"] = true
@@ -277,20 +275,20 @@ func display(board [][]int) {
 	} else {
 		// Reset to app's 0x0 position
 		reset := "\r"
-		for i := 0; i < dy*2+1; i++ {
+		for i := 0; i < n*2+1; i++ {
 			reset += "\033[F"
 		}
 		fmt.Print(reset)
 	}
 
-	for i := 0; i < dy; i++ {
+	for i := 0; i < n; i++ {
 		line := ""
 		if i == 0 {
 			// Top
 			line = "\u2554"
-			for j := 0; j < dx; j++ {
+			for j := 0; j < m; j++ {
 				line += "\u2550\u2550\u2550\u2550\u2550"
-				if j < dx-1 {
+				if j < m-1 {
 					line += "\u2564"
 				} else {
 					line += "\u2557"
@@ -299,9 +297,9 @@ func display(board [][]int) {
 		} else {
 			// Middle
 			line = "\u2551"
-			for j := 0; j < dx; j++ {
+			for j := 0; j < m; j++ {
 				line += "\u2500\u2500\u2500\u2500\u2500"
-				if j < dx-1 {
+				if j < m-1 {
 					line += "\u253c"
 				} else {
 					line += "\u2551"
@@ -311,12 +309,12 @@ func display(board [][]int) {
 		fmt.Println(line)
 
 		line = "\u2551"
-		for j := 0; j < dx; j++ {
+		for j := 0; j < m; j++ {
 			if j != 0 {
 				line += "\u2502"
 			}
 
-			index := i*dx + j + 1
+			index := i*m + j + 1
 
 			if board[i][j] == 0 {
 				mark = fmt.Sprintf("\033[37m%s\033[0m", strconv.Itoa(index))
@@ -343,9 +341,9 @@ func display(board [][]int) {
 		if i+1 == len(board) {
 			// Bottom
 			line = "\u255a"
-			for j := 0; j < dx; j++ {
+			for j := 0; j < m; j++ {
 				line += "\u2550\u2550\u2550\u2550\u2550"
-				if j < dx-1 {
+				if j < m-1 {
 					line += "\u2567"
 				} else {
 					line += "\u255d"
@@ -379,12 +377,12 @@ func printStats(log []int, rmd bool) {
 
 // move registers a move on the board
 func move(player int, pos int) bool {
-	if pos > dx*dy {
+	if pos > m*n {
 		return false
 	}
 
-	var i = (pos - 1) / dx
-	var j = (pos - 1) % dx
+	var i = (pos - 1) / m
+	var j = (pos - 1) % m
 
 	if board[i][j] != 0 {
 		return false
@@ -404,26 +402,26 @@ func evaluate(board [][]int) int {
 
 	// REVIEW: There must be a better solution to this
 
-	if inarow <= dx && inarow <= dy {
+	if inarow <= m && inarow <= n {
 		// Check top-left to bottom-right
-		for i = 0; i < dy-1 && i < dx-1 && b[i][i] == b[i+1][i+1]; i++ {
+		for i = 0; i < n-1 && i < m-1 && b[i][i] == b[i+1][i+1]; i++ {
 			if i >= inarow-2 && b[i][i] != 0 {
 				return b[i][i]
 			}
 		}
 
 		// Check top-right to bottom left
-		for i = 0; i < dy-1 && i < dx-1 && b[i][dx-i-1] == b[i+1][dx-i-2]; i++ { // Check i,d-i
-			if i >= inarow-2 && b[i][dx-i-1] != 0 {
-				return b[i][dx-i-1]
+		for i = 0; i < n-1 && i < m-1 && b[i][m-i-1] == b[i+1][m-i-2]; i++ {
+			if i >= inarow-2 && b[i][m-i-1] != 0 {
+				return b[i][m-i-1]
 			}
 		}
 	}
 
-	if inarow <= dx {
+	if inarow <= m {
 		// Check all rows
-		for i = 0; i < dy; i++ {
-			for j = 0; j < dx-1 && b[i][j] == b[i][j+1]; j++ { // Check i,j
+		for i = 0; i < n; i++ {
+			for j = 0; j < m-1 && b[i][j] == b[i][j+1]; j++ {
 				if j >= inarow-2 && b[i][j] != 0 {
 					return b[i][j]
 				}
@@ -431,12 +429,12 @@ func evaluate(board [][]int) int {
 		}
 	}
 
-	if inarow <= dy {
+	if inarow <= n {
 		// Check all columns
-		for j = 0; j < dx; j++ {
-			for i = 0; i < dy-1 && b[i][j] == b[i+1][j]; i++ { // Check j,i
-				if i >= inarow-2 && b[i][j] != 0 {
-					return b[i][j]
+		for i = 0; i < m; i++ {
+			for j = 0; j < n-1 && b[j][i] == b[j+1][i]; j++ {
+				if j >= inarow-2 && b[j][i] != 0 {
+					return b[j][i]
 				}
 			}
 		}
