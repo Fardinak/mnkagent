@@ -181,10 +181,11 @@ func play(rounds int) (log []int) {
 
 	for c, turn := 1, 1; c <= rounds; c++ {
 		// Start a new round and get the winner's id
+		pTurn := turn
 		turn = newRound(turn, true) // Previous round's winner starts the game
 		log[turn]++                 // Keep scores
 		if turn == 0 {              // If it was a draw, next player starts the game
-			turn = getNextPlayer(turn)
+			turn = getNextPlayer(pTurn)
 		}
 
 		fmt.Print("___________________________________\n\n")
