@@ -1,7 +1,7 @@
 // The implementation of an m,n,k-game with swappable Agents
 package main
 
-// TODO: Tryout Gomoku: 19,19,5-game
+// NOTE: X Axis: j, m, dx; Y Axis: i, n, dy
 
 import (
 	"flag"
@@ -15,7 +15,9 @@ import (
 // Flags
 var (
 	// Game flags
-	// TODO: dx, dy, inarow
+	dx        int
+	dy        int
+	inarow    int
 	noDisplay bool
 
 	// RL flags
@@ -24,9 +26,6 @@ var (
 	rlNoLearn         bool
 	rlTrainingMode    uint
 )
-
-const dimensions int = 3 // had to be int for compatibility
-const inarow int = 3
 
 // Signs
 const (
@@ -37,7 +36,7 @@ const (
 var players = [3]Agent{
 	nil, // No one
 	NewHumanAgent(1, X),
-	NewRLAgent(2, O, dimensions, dimensions, inarow, !rlNoLearn),
+	NewRLAgent(2, O, dx, dy, inarow, !rlNoLearn),
 }
 var rounds int
 var board [][]int
@@ -59,6 +58,9 @@ type Agent interface {
 
 func init() {
 	// Game flags
+	flag.IntVar(&dx, "m", 3, "Board dimention across the horizontal (x) axis")
+	flag.IntVar(&dy, "n", 3, "Board dimention across the vertical (y) axis")
+	flag.IntVar(&inarow, "k", 3, "Number of marks in a row")
 	flag.BoolVar(&noDisplay, "no-display", false, "Do now show board and "+
 		"stats in training mode")
 
@@ -76,6 +78,12 @@ func init() {
 
 func main() {
 	fmt.Println("Tic-Tac-Toe v1")
+
+	if inarow > dx && inarow > dy {
+		fmt.Printf("There can not exist %d marks in a row, on a %dx%d board",
+			inarow, dx, dy)
+		os.Exit(1)
+	}
 
 	rand.Seed(time.Now().UTC().UnixNano())
 	readKnowledgeOK := rlKnowledge.loadFromFile(rlModelFile)
@@ -132,8 +140,8 @@ func train(rounds uint) (log []int) {
 		return
 	}
 
-	players[1] = NewRLAgent(1, X, dimensions, dimensions, inarow, true)
-	players[2] = NewRLAgent(2, O, dimensions, dimensions, inarow, true)
+	players[1] = NewRLAgent(1, X, dx, dy, inarow, true)
+	players[2] = NewRLAgent(2, O, dx, dy, inarow, true)
 
 	var c uint
 	var turn int
@@ -171,7 +179,7 @@ func play(rounds int) (log []int) {
 	}
 
 	players[1] = NewHumanAgent(1, X)
-	players[2] = NewRLAgent(2, O, dimensions, dimensions, inarow, !rlNoLearn)
+	players[2] = NewRLAgent(2, O, dx, dy, inarow, !rlNoLearn)
 
 	for c, turn := 1, 1; c <= rounds; c++ {
 		// Start a new round and get the winner's id
@@ -193,7 +201,7 @@ func play(rounds int) (log []int) {
 // newRound starts a new round
 func newRound(turn int, visual bool) int {
 	// Reset board
-	initBoard(dimensions, dimensions)
+	initBoard(dx, dy)
 
 	// Set runtime flags
 	flags["first_run"] = true
@@ -329,12 +337,12 @@ func printStats(log []int, rmd bool) {
 
 // move registers a move on the board
 func move(player int, pos int) bool {
-	if pos > dimensions*dimensions {
+	if pos > dx*dy {
 		return false
 	}
 
-	var i = (pos - 1) / dimensions
-	var j = (pos - 1) % dimensions
+	var i = (pos - 1) / dx
+	var j = (pos - 1) % dx
 
 	if board[i][j] != 0 {
 		return false
@@ -350,32 +358,45 @@ func move(player int, pos int) bool {
 //   >1: Winner's id
 func evaluate(board [][]int) int {
 	var b = board
-	var d = dimensions
 	var i, j int
 
+	// REVIEW: Changed all of this. Does it still work? I don't think so!!
 	// REVIEW: There must be a better solution to this
 
-	for i = 0; i < d-1 && b[i][i] == b[i+1][i+1]; i++ { // Check i,i
-		if i >= inarow-2 && b[i][i] != 0 {
-			return b[i][i]
+	if inarow < dx && inarow < dy {
+		// Check top-left to bottom-right
+		for i = 0; i < dy-1 && i < dx-1 && b[i][i] == b[i+1][i+1]; i++ {
+			if i >= inarow-2 && b[i][i] != 0 {
+				return b[i][i]
+			}
 		}
-	}
-	for i = 0; i < d-1 && b[i][d-i-1] == b[i+1][d-i-2]; i++ { // Check i,d-i
-		if i >= inarow-2 && b[i][d-i-1] != 0 {
-			return b[i][d-i-1]
-		}
-	}
-	for i = 0; i < d; i++ {
-		for j = 0; j < d-1 && b[i][j] == b[i][j+1]; j++ { // Check i,j
-			if j >= inarow-2 && b[i][j] != 0 {
-				return b[i][j]
+
+		// Check top-right to bottom left
+		for i = 0; i < dy-1 && i < dx-1 && b[i][dx-i-1] == b[i+1][dx-i-2]; i++ { // Check i,d-i
+			if i >= inarow-2 && b[i][dx-i-1] != 0 {
+				return b[i][dx-i-1]
 			}
 		}
 	}
-	for i = 0; i < d; i++ {
-		for j = 0; j < d-1 && b[j][i] == b[j+1][i]; j++ { // Check j,i
-			if j >= inarow-2 && b[j][i] != 0 {
-				return b[j][i]
+
+	if inarow < dx {
+		// Check all rows
+		for i = 0; i < dy; i++ {
+			for j = 0; j < dx-1 && b[i][j] == b[i][j+1]; j++ { // Check i,j
+				if j >= inarow-2 && b[i][j] != 0 {
+					return b[i][j]
+				}
+			}
+		}
+	}
+
+	if inarow < dy {
+		// Check all columns
+		for j = 0; j < dx; j++ {
+			for i = 0; i < dy-1 && b[i][j] == b[i+1][i]; i++ { // Check j,i
+				if i >= inarow-2 && b[i][j] != 0 {
+					return b[i][j]
+				}
 			}
 		}
 	}
