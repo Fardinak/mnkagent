@@ -402,10 +402,9 @@ func evaluate(board [][]int) int {
 	var b = board
 	var i, j int
 
-	// REVIEW: Changed all of this. Does it still work? I don't think so!!
 	// REVIEW: There must be a better solution to this
 
-	if inarow < dx && inarow < dy {
+	if inarow <= dx && inarow <= dy {
 		// Check top-left to bottom-right
 		for i = 0; i < dy-1 && i < dx-1 && b[i][i] == b[i+1][i+1]; i++ {
 			if i >= inarow-2 && b[i][i] != 0 {
@@ -421,7 +420,7 @@ func evaluate(board [][]int) int {
 		}
 	}
 
-	if inarow < dx {
+	if inarow <= dx {
 		// Check all rows
 		for i = 0; i < dy; i++ {
 			for j = 0; j < dx-1 && b[i][j] == b[i][j+1]; j++ { // Check i,j
@@ -432,10 +431,10 @@ func evaluate(board [][]int) int {
 		}
 	}
 
-	if inarow < dy {
+	if inarow <= dy {
 		// Check all columns
 		for j = 0; j < dx; j++ {
-			for i = 0; i < dy-1 && b[i][j] == b[i+1][i]; i++ { // Check j,i
+			for i = 0; i < dy-1 && b[i][j] == b[i+1][j]; i++ { // Check j,i
 				if i >= inarow-2 && b[i][j] != 0 {
 					return b[i][j]
 				}
