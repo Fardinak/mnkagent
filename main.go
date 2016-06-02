@@ -424,9 +424,9 @@ func getNextPlayer(current int) int {
 
 // initBoard makes a 2D slice, limited to dimensions
 func initBoard(m, n int) {
-	board = make([][]int, m)
+	board = make([][]int, n)
 	for i := range board {
-		board[i] = make([]int, n)
+		board[i] = make([]int, m)
 	}
 }
 
