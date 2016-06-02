@@ -270,46 +270,88 @@ func newRound(turn int, visual bool) int {
 // display draws the board on the terminal
 // TODO: Move this to Human Agent
 func display(board [][]int) {
-	// TODO: Support dimensions
 	var mark string
 
 	if flags["first_run"] {
 		flags["first_run"] = false
 	} else {
-		// Reset to app's 0x0 position: \r and seven lines up
-		fmt.Print("\r\033[F\033[F\033[F\033[F\033[F\033[F\033[F")
+		// Reset to app's 0x0 position
+		reset := "\r"
+		for i := 0; i < dy*2+1; i++ {
+			reset += "\033[F"
+		}
+		fmt.Print(reset)
 	}
 
-	for i := range board {
+	for i := 0; i < dy; i++ {
+		line := ""
 		if i == 0 {
 			// Top
-			fmt.Print("\u2554\u2550\u2550\u2550\u2550\u2550\u2564\u2550\u2550" +
-				"\u2550\u2550\u2550\u2564\u2550\u2550\u2550\u2550\u2550\u2557\n")
+			line = "\u2554"
+			for j := 0; j < dx; j++ {
+				line += "\u2550\u2550\u2550\u2550\u2550"
+				if j < dx-1 {
+					line += "\u2564"
+				} else {
+					line += "\u2557"
+				}
+			}
 		} else {
 			// Middle
-			fmt.Print("\u2551\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500" +
-				"\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2551\n")
+			line = "\u2551"
+			for j := 0; j < dx; j++ {
+				line += "\u2500\u2500\u2500\u2500\u2500"
+				if j < dx-1 {
+					line += "\u253c"
+				} else {
+					line += "\u2551"
+				}
+			}
 		}
+		fmt.Println(line)
 
-		fmt.Print("\u2551")
-		for j := range board[i] {
+		line = "\u2551"
+		for j := 0; j < dx; j++ {
 			if j != 0 {
-				fmt.Print("\u2502")
+				line += "\u2502"
 			}
 
+			index := i*dx + j + 1
+
 			if board[i][j] == 0 {
-				mark = "\033[37m" + strconv.Itoa(i*len(board[i])+j+1) + "\033[0m"
+				mark = fmt.Sprintf("\033[37m%s\033[0m", strconv.Itoa(index))
 			} else {
 				mark = players[board[i][j]].GetSign()
 			}
-			fmt.Printf("  %s  ", mark)
+
+			padding := [2]string{"", ""}
+			if index < 10 {
+				padding = [2]string{"  ", "  "}
+			} else if index < 100 {
+				padding = [2]string{" ", "  "}
+			} else if index < 1000 {
+				padding = [2]string{" ", " "}
+			}
+
+			line += padding[0]
+			line += mark
+			line += padding[1]
 		}
-		fmt.Print("\u2551\n")
+		line += "\u2551"
+		fmt.Println(line)
 
 		if i+1 == len(board) {
 			// Bottom
-			fmt.Print("\u255a\u2550\u2550\u2550\u2550\u2550\u2567\u2550\u2550" +
-				"\u2550\u2550\u2550\u2567\u2550\u2550\u2550\u2550\u2550\u255d\n")
+			line = "\u255a"
+			for j := 0; j < dx; j++ {
+				line += "\u2550\u2550\u2550\u2550\u2550"
+				if j < dx-1 {
+					line += "\u2567"
+				} else {
+					line += "\u255d"
+				}
+			}
+			fmt.Println(line)
 		}
 	}
 }
