@@ -157,7 +157,7 @@ func (agent *RLAgent) learn(qMax float64) {
 		(agent.prevReward + (agent.DiscountFactor * qMax) - oldVal))
 }
 
-// Return score for a certain state
+// lookup returns the Q-value for the given state
 func (agent *RLAgent) lookup(state [][]int) float64 {
 	var mState = marshallState(state, agent.id) // Marshalled state
 	val, ok := agent.values[mState]
@@ -168,7 +168,7 @@ func (agent *RLAgent) lookup(state [][]int) float64 {
 	return val
 }
 
-// value function returns given state's value
+// value returns the reward for the given state
 func (agent *RLAgent) value(state [][]int) float64 {
 	switch evaluate(state) {
 	case agent.id: // Agent won
