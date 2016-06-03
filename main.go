@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"time"
 )
@@ -25,6 +26,9 @@ var (
 	rlNoLearn         bool
 	rlTrainingMode    uint
 )
+
+// Signal channel
+var sigint chan os.Signal
 
 // Signs
 const (
@@ -83,6 +87,15 @@ func main() {
 			inarow, m, n)
 		os.Exit(1)
 	}
+
+	// Register SIGINT handler
+	sigint = make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt)
+	go func(c <-chan os.Signal) {
+		<-c
+		flags["terminate"] = true
+	}(sigint)
+	defer close(sigint)
 
 	rand.Seed(time.Now().UTC().UnixNano())
 	readKnowledgeOK := rlKnowledge.loadFromFile(rlModelFile)
@@ -197,6 +210,14 @@ func train(rounds uint) (log []int) {
 		if !noDisplay {
 			// Print separator and cleanup progress bar
 			fmt.Printf("___________________________________\n%s\n", cleanupLine)
+		}
+
+		if flags["terminate"] {
+			fmt.Print("\r", generateProgressBar(progress, termW, color, "Terminated."), "\n")
+			if !rlNoLearn {
+				rlKnowledge.saveToFile(rlModelFile)
+			}
+			return
 		}
 
 		if pTick || !noDisplay {
