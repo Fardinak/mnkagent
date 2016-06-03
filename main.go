@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"os/exec"
 	"strconv"
 	"time"
 )
@@ -141,9 +142,51 @@ func train(rounds uint) (log []int) {
 	players[1] = NewRLAgent(1, X, m, n, inarow, true)
 	players[2] = NewRLAgent(2, O, m, n, inarow, true)
 
-	var c uint
-	var turn int
+	var (
+		// For the game
+		c    uint
+		turn int
+
+		// For the progress bar
+		termW         int
+		cleanupLine   string
+		displayH      int = n*2 + 3
+		displayBottom string
+		displayTop    string
+		progress      int
+		progressbar   string
+		color         string = "\033[41;3m"
+		colorDone     string = "\033[46;3m"
+	)
+
+	for i := 0; i <= displayH; i++ {
+		displayBottom += "\n"
+		displayTop += "\033[F"
+	}
+
 	for c, turn = 1, 1; c <= rounds; c++ {
+		pTick := c*100%rounds == 0
+		if pTick || c == 1 {
+			// Get terminal width
+			termW, _ = getTermSize()
+
+			// Generate cleanup line for terminal width
+			cleanupLine = ""
+			for i := 0; i < termW; i++ {
+				cleanupLine += " "
+			}
+			cleanupLine += "\r"
+
+			// Track progress
+			progress = int(c * 100 / rounds)
+			progressbar = generateProgressBar(progress, termW, color, "Training...")
+		}
+
+		if pTick || !noDisplay {
+			// Clear the progress bar
+			fmt.Print(cleanupLine)
+		}
+
 		// Start a new round and get the winner's id
 		turn = newRound(turn, !noDisplay) // Previous round's winner starts the game
 		log[turn]++                       // Keep scores
@@ -152,17 +195,33 @@ func train(rounds uint) (log []int) {
 		}
 
 		if !noDisplay {
-			fmt.Print("___________________________________\n\n")
+			// Print separator and cleanup progress bar
+			fmt.Printf("___________________________________\n%s\n", cleanupLine)
 		}
 
-		if !rlNoLearn && c%1000 == 0 { // Store knowledge every 1K rounds
+		if pTick || !noDisplay {
+			if !noDisplay && c != rounds {
+				// If not 100%, leave room for next board display
+				fmt.Print(displayBottom)
+			}
+
+			// Print progress bar
+			fmt.Print(progressbar)
+
+			if !noDisplay && c != rounds {
+				// If not 100%, go to display 0x0
+				fmt.Print(displayTop)
+			}
+		}
+
+		if !rlNoLearn && pTick {
+			// Store knowledge every 1/100 of rounds
 			rlKnowledge.saveToFile(rlModelFile)
 		}
 	}
 
-	if !rlNoLearn {
-		rlKnowledge.saveToFile(rlModelFile)
-	}
+	// Progress bar final touch
+	fmt.Print(generateProgressBar(100, termW, colorDone, "Training completed"), "\n")
 
 	return
 }
@@ -223,13 +282,24 @@ func newRound(turn int, visual bool) int {
 			panic(err)
 		}
 
+		var termW int
+		if visual {
+			termW, _ = getTermSize()
+		}
+
 		if !move(turn, pos) {
-			fmt.Print("Invalid move!                      ")
+			// Clear prompt
+			for i := 0; i < termW; i++ {
+				fmt.Print(" ")
+			}
+			fmt.Print("\rInvalid move!")
 		} else {
 			if visual {
 				// Clear previous messages
-				fmt.Print("                                   \r")
-				fmt.Printf("Agent %s: %s / Agent %s: %s",
+				for i := 0; i < termW; i++ {
+					fmt.Print(" ")
+				}
+				fmt.Printf("\rAgent %s: %s / Agent %s: %s",
 					players[1].GetSign(), players[1].FetchMessage(),
 					players[2].GetSign(), players[2].FetchMessage())
 
@@ -237,13 +307,25 @@ func newRound(turn int, visual bool) int {
 			}
 
 			var result = evaluate(board)
+
+			if visual && result != 0 { // Game ended
+				// Clear prompt
+				for i := 0; i < 2; i++ {
+					for j := 0; j < termW; j++ {
+						fmt.Print(" ")
+					}
+					if i == 0 {
+						fmt.Print("\n")
+					}
+				}
+				fmt.Print("\r")
+			}
+
 			if result == 0 { // The game goes on
 				turn = getNextPlayer(turn)
 
 			} else if result == -1 { // Draw
 				if visual {
-					// Clear prompt
-					fmt.Print("\n                         \r")
 					fmt.Println("It's a DRAW!")
 				}
 
@@ -253,7 +335,6 @@ func newRound(turn int, visual bool) int {
 
 			} else { // Someone won
 				if visual {
-					fmt.Print("                                   \n")
 					fmt.Printf("We have a WINNER! Congratulations %s\n",
 						players[result].GetSign())
 				}
@@ -488,4 +569,70 @@ func fileAccessible(path string) (err error) {
 	f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
 	defer f.Close()
 	return
+}
+
+// Get terminal size
+func getTermSize() (w int, h int) {
+	// TODO: Use a terminal ui library like termbox-go
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = os.Stdin
+	d, _ := cmd.Output()
+	fmt.Sscan(string(d), &h, &w)
+	return
+}
+
+// generateProgressBar constructs a progress bar with given information
+func generateProgressBar(progress, width int, color string, msg string) string {
+	var reset = []byte("\033[0m")
+	var ellipsis = []byte("...")
+	var fProgress = fmt.Sprintf("%d%%", progress)
+	var pb = make([]byte, width, 2*width+20)
+	var m = make([]byte, len(msg), len(msg)+len(ellipsis))
+	var p = make([]byte, len(fProgress))
+
+	// Generate progress indicator string
+	copy(p, fProgress)
+
+	// Truncate message if necessary
+	// TODO: Either escape special commands like color, or take care not to truncate them
+	copy(m, msg)
+	if len(m) > width-8 {
+		m = m[:width-5-len(ellipsis)]
+		copy(m[len(m)-len(ellipsis):], ellipsis)
+	}
+
+	// Fill buffer with empty space
+	for i := 0; i < width; i++ {
+		copy(pb[i:], " ")
+	}
+
+	// Progress indicator position
+	pIndex := width*progress/100 + len(color)
+	// Message position
+	mOffset := (width-8)/2 - len(m)/2
+	if mOffset < 1 {
+		mOffset = 1
+	}
+
+	// Buffer message
+	copy(pb[mOffset:], m)
+
+	// Buffer progress indicator
+	copy(pb[len(pb)-len(p)-1:], p)
+
+	// Extend buffer to support color, reset and BOL
+	pb = pb[0 : len(pb)+len(color)+len(reset)+len("\r")]
+
+	// Add progress color
+	copy(pb[len(color):], pb[:])
+	copy(pb[:len(color)], color)
+
+	// Reset progress color
+	copy(pb[pIndex+len(reset):], pb[pIndex:])
+	copy(pb[pIndex:pIndex+len(reset)], reset)
+
+	// Set cursor to BOL
+	copy(pb[len(pb)-len("\r"):], "\r")
+
+	return string(pb)
 }
