@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"time"
 )
 
@@ -418,20 +417,22 @@ func display(board [][]int) {
 			}
 
 			index := i*m + j + 1
+			padding := [2]string{"", ""}
 
 			if board[i][j] == 0 {
-				mark = fmt.Sprintf("\033[37m%s\033[0m", strconv.Itoa(index))
+				mark = fmt.Sprintf("\033[37m%d\033[0m", index)
+
+				if index < 10 {
+					padding = [2]string{"  ", "  "}
+				} else if index < 100 {
+					padding = [2]string{" ", "  "}
+				} else if index < 1000 {
+					padding = [2]string{" ", " "}
+				}
+
 			} else {
 				mark = players[board[i][j]].GetSign()
-			}
-
-			padding := [2]string{"", ""}
-			if index < 10 {
 				padding = [2]string{"  ", "  "}
-			} else if index < 100 {
-				padding = [2]string{" ", "  "}
-			} else if index < 1000 {
-				padding = [2]string{" ", " "}
 			}
 
 			line += padding[0]
