@@ -31,8 +31,8 @@ type Action interface {
 }
 
 type MNKBoard struct {
-	board   [][]int
 	m, n, k int
+	board   MNKState
 }
 
 func NewMNKBoard(m, n, k int) (b *MNKBoard, err error) {
@@ -55,18 +55,18 @@ func NewMNKBoard(m, n, k int) (b *MNKBoard, err error) {
 }
 
 func (b *MNKBoard) GetState(agentID int) State {
-	var s string
-	for i := range b.board {
-		for j := range b.board[i] {
+	var s MNKState = b.board.Clone()
+
+	// Create populate the board with 0: empty, 1: agent's, -1: rival's
+	for i := range s {
+		for j := range s[i] {
 			// Regulate based on given agent ID
-			if b.board[i][j] > 0 {
-				if b.board[i][j] == agentID {
-					s += "X"
+			if s[i][j] > 0 {
+				if s[i][j] == agentID {
+					s[i][j] = 1
 				} else {
-					s += "O"
+					s[i][j] = -1
 				}
-			} else {
-				s += "-"
 			}
 		}
 	}
@@ -197,6 +197,17 @@ func (b *MNKBoard) EvaluateAction(agentID int, a Action) int {
 
 func (b *MNKBoard) Reset() {
 	b, _ = NewMNKBoard(b.m, b.n, b.k)
+}
+
+type MNKState [][]int
+
+func (s MNKState) Clone() (sp MNKState) {
+	sp = make([][]int, len(s))
+	for i := range s {
+		sp[i] = make([]int, len(s[i]))
+		copy(sp[i], s[i])
+	}
+	return
 }
 
 type MNKAction struct {
