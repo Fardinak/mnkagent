@@ -16,8 +16,9 @@ var (
 	// Game flags
 	m         int
 	n         int
-	inarow    int
+	k         int
 	noDisplay bool
+	gomoku    bool
 
 	// RL flags
 	rlModelFile       string
@@ -38,7 +39,7 @@ const (
 var players = [3]Agent{
 	nil, // No one
 	NewHumanAgent(1, X),
-	NewRLAgent(2, O, m, n, inarow, !rlNoLearn),
+	NewRLAgent(2, O, m, n, k, !rlNoLearn),
 }
 var rounds int
 var board [][]int
@@ -62,9 +63,10 @@ func init() {
 	// Game flags
 	flag.IntVar(&m, "m", 3, "Board dimention across the horizontal (x) axis")
 	flag.IntVar(&n, "n", 3, "Board dimention across the vertical (y) axis")
-	flag.IntVar(&inarow, "k", 3, "Number of marks in a row")
+	flag.IntVar(&k, "k", 3, "Number of marks in a row")
 	flag.BoolVar(&noDisplay, "no-display", false, "Do now show board and "+
 		"stats in training mode")
+	flag.BoolVar(&gomoku, "gomoku", false, "Shortcut for a 19,19,5 game (overrides m, n and k)")
 
 	// RL flags
 	flag.StringVar(&rlModelFile, "rl-model", "rl.kw", "RL trained model file "+
@@ -81,9 +83,15 @@ func init() {
 func main() {
 	fmt.Println("Tic-Tac-Toe v1")
 
-	if inarow > m && inarow > n {
+	if gomoku {
+		m = 19
+		n = 19
+		k = 5
+	}
+
+	if k > m && k > n {
 		fmt.Printf("There can not exist %d marks in a row, on a %dx%d board",
-			inarow, m, n)
+			k, m, n)
 		os.Exit(1)
 	}
 
@@ -151,8 +159,8 @@ func train(rounds uint) (log []int) {
 		return
 	}
 
-	players[1] = NewRLAgent(1, X, m, n, inarow, true)
-	players[2] = NewRLAgent(2, O, m, n, inarow, true)
+	players[1] = NewRLAgent(1, X, m, n, k, true)
+	players[2] = NewRLAgent(2, O, m, n, k, true)
 
 	var (
 		// For the game
@@ -256,7 +264,7 @@ func play(rounds int) (log []int) {
 	}
 
 	players[1] = NewHumanAgent(1, X)
-	players[2] = NewRLAgent(2, O, m, n, inarow, !rlNoLearn)
+	players[2] = NewRLAgent(2, O, m, n, k, !rlNoLearn)
 
 	for c, turn := 1, 1; c <= rounds; c++ {
 		// Start a new round and get the winner's id
@@ -506,38 +514,38 @@ func evaluate(board [][]int) int {
 
 	// REVIEW: There must be a better solution to this
 
-	if inarow <= m && inarow <= n {
+	if k <= m && k <= n {
 		// Check top-left to bottom-right
 		for i = 0; i < n-1 && i < m-1 && b[i][i] == b[i+1][i+1]; i++ {
-			if i >= inarow-2 && b[i][i] != 0 {
+			if i >= k-2 && b[i][i] != 0 {
 				return b[i][i]
 			}
 		}
 
 		// Check top-right to bottom left
 		for i = 0; i < n-1 && i < m-1 && b[i][m-i-1] == b[i+1][m-i-2]; i++ {
-			if i >= inarow-2 && b[i][m-i-1] != 0 {
+			if i >= k-2 && b[i][m-i-1] != 0 {
 				return b[i][m-i-1]
 			}
 		}
 	}
 
-	if inarow <= m {
+	if k <= m {
 		// Check all rows
 		for i = 0; i < n; i++ {
 			for j = 0; j < m-1 && b[i][j] == b[i][j+1]; j++ {
-				if j >= inarow-2 && b[i][j] != 0 {
+				if j >= k-2 && b[i][j] != 0 {
 					return b[i][j]
 				}
 			}
 		}
 	}
 
-	if inarow <= n {
+	if k <= n {
 		// Check all columns
 		for i = 0; i < m; i++ {
 			for j = 0; j < n-1 && b[j][i] == b[j+1][i]; j++ {
-				if j >= inarow-2 && b[j][i] != 0 {
+				if j >= k-2 && b[j][i] != 0 {
 					return b[j][i]
 				}
 			}
