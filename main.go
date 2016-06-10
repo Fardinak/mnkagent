@@ -42,22 +42,8 @@ var players = [3]Agent{
 	NewRLAgent(2, O, m, n, k, !rlNoLearn),
 }
 var rounds int
-var board [][]int
+var board *MNKBoard
 var flags = make(map[string]bool)
-
-type Agent interface {
-	// FetchMessage returns agent's messages, if any
-	FetchMessage() string
-
-	// FetchMove returns the agent's move based on given state
-	FetchMove([][]int) (int, error)
-
-	// GameOver states that the game is over and that the latest state should be saved
-	GameOver([][]int)
-
-	// GetSign returns the agent's sign (X|O)
-	GetSign() string
-}
 
 func init() {
 	// Game flags
@@ -89,9 +75,10 @@ func main() {
 		k = 5
 	}
 
-	if k > m && k > n {
-		fmt.Printf("There can not exist %d marks in a row, on a %dx%d board",
-			k, m, n)
+	var err error
+	board, err = NewMNKBoard(m, n, k)
+	if err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
 
@@ -138,7 +125,7 @@ func main() {
 	}
 
 	fmt.Printf("? > How many rounds shall we play? ")
-	_, err := fmt.Scanln(&rounds)
+	_, err = fmt.Scanln(&rounds)
 	if err != nil {
 		fmt.Println("\n[error] Shit happened!")
 		panic(err)
@@ -289,14 +276,14 @@ func play(rounds int) (log []int) {
 // newRound starts a new round
 func newRound(turn int, visual bool) int {
 	// Reset board
-	initBoard(m, n)
+	board.Reset()
 
 	// Set runtime flags
 	flags["first_run"] = true
 
 	if visual {
 		// Draw a new board
-		display(board)
+		display(board.GetWorld())
 	}
 
 	// Who starts the game if not specified
@@ -306,9 +293,10 @@ func newRound(turn int, visual bool) int {
 
 	// Start the game
 	for {
-		pos, err := players[turn].FetchMove(board)
+		action, err := players[turn].FetchMove(
+			board.GetState(turn),
+			board.GetPotentialActions(turn))
 		if err != nil {
-			fmt.Println("\n\n[error] Shit happened!")
 			panic(err)
 		}
 
@@ -317,12 +305,13 @@ func newRound(turn int, visual bool) int {
 			termW, _ = getTermSize()
 		}
 
-		if !move(turn, pos) {
+		_, err = board.Act(turn, action)
+		if err != nil {
 			// Clear prompt
 			for i := 0; i < termW; i++ {
 				fmt.Print(" ")
 			}
-			fmt.Print("\rInvalid move!")
+			fmt.Print("\r", err)
 		} else {
 			if visual {
 				// Clear previous messages
@@ -333,10 +322,10 @@ func newRound(turn int, visual bool) int {
 					players[1].GetSign(), players[1].FetchMessage(),
 					players[2].GetSign(), players[2].FetchMessage())
 
-				display(board)
+				display(board.GetWorld())
 			}
 
-			var result = evaluate(board)
+			var result = board.EvaluateAction(turn, action)
 
 			if visual && result != 0 { // Game ended
 				// Clear prompt
@@ -363,10 +352,10 @@ func newRound(turn int, visual bool) int {
 				players[2].GameOver(board)
 				return 0
 
-			} else { // Someone won
+			} else { // Current player won
 				if visual {
 					fmt.Printf("We have a WINNER! Congratulations %s\n",
-						players[result].GetSign())
+						players[turn].GetSign())
 				}
 
 				players[1].GameOver(board)
@@ -378,8 +367,8 @@ func newRound(turn int, visual bool) int {
 }
 
 // display draws the board on the terminal
-// TODO: Move this to Human Agent
-func display(board [][]int) {
+func display(board State) {
+	var b MNKState = board.(MNKState)
 	var mark string
 
 	if flags["first_run"] {
@@ -429,7 +418,7 @@ func display(board [][]int) {
 			index := i*m + j + 1
 			padding := [2]string{"", ""}
 
-			if board[i][j] == 0 {
+			if b[i][j] == 0 {
 				mark = fmt.Sprintf("\033[37m%d\033[0m", index)
 
 				if index < 10 {
@@ -441,7 +430,7 @@ func display(board [][]int) {
 				}
 
 			} else {
-				mark = players[board[i][j]].GetSign()
+				mark = players[b[i][j]].GetSign()
 				padding = [2]string{"  ", "  "}
 			}
 
@@ -452,7 +441,7 @@ func display(board [][]int) {
 		line += "\u2551"
 		fmt.Println(line)
 
-		if i+1 == len(board) {
+		if i+1 == len(b) {
 			// Bottom
 			line = "\u255a"
 			for j := 0; j < m; j++ {
@@ -489,98 +478,12 @@ func printStats(log []int, rmd bool) {
 	}
 }
 
-// move registers a move on the board
-func move(player int, pos int) bool {
-	if pos > m*n {
-		return false
-	}
-
-	var i = (pos - 1) / m
-	var j = (pos - 1) % m
-
-	if board[i][j] != 0 {
-		return false
-	}
-
-	board[i][j] = player
-	return true
-}
-
-// Evaluates the board and returns
-//   -1: Draw
-//    0: Game continues
-//   >1: Winner's id
-func evaluate(board [][]int) int {
-	var b = board
-	var i, j int
-
-	// REVIEW: There must be a better solution to this
-
-	if k <= m && k <= n {
-		// Check top-left to bottom-right
-		for i = 0; i < n-1 && i < m-1 && b[i][i] == b[i+1][i+1]; i++ {
-			if i >= k-2 && b[i][i] != 0 {
-				return b[i][i]
-			}
-		}
-
-		// Check top-right to bottom left
-		for i = 0; i < n-1 && i < m-1 && b[i][m-i-1] == b[i+1][m-i-2]; i++ {
-			if i >= k-2 && b[i][m-i-1] != 0 {
-				return b[i][m-i-1]
-			}
-		}
-	}
-
-	if k <= m {
-		// Check all rows
-		for i = 0; i < n; i++ {
-			for j = 0; j < m-1 && b[i][j] == b[i][j+1]; j++ {
-				if j >= k-2 && b[i][j] != 0 {
-					return b[i][j]
-				}
-			}
-		}
-	}
-
-	if k <= n {
-		// Check all columns
-		for i = 0; i < m; i++ {
-			for j = 0; j < n-1 && b[j][i] == b[j+1][i]; j++ {
-				if j >= k-2 && b[j][i] != 0 {
-					return b[j][i]
-				}
-			}
-		}
-	}
-
-	// Check if there is any empty room
-	for i = range board {
-		for j = range board[i] {
-			if board[i][j] == 0 {
-				return 0
-			}
-		}
-	}
-
-	// It's a draw if none has retuned
-	return -1
-}
-
 // getNextPlayer returns the next player's id
 func getNextPlayer(current int) int {
 	if current < len(players)-1 {
 		return current + 1
 	}
 	return 1
-}
-
-// initBoard makes a 2D slice, limited to dimensions
-func initBoard(m, n int) {
-	board = make([][]int, n)
-	for i := range board {
-		board[i] = make([]int, m)
-	}
 }
 
 // Get the key of the maximum array item

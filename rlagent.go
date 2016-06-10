@@ -24,10 +24,13 @@ type RLAgent struct {
 	ExplorationFactor float64 //epsilon
 
 	// States stash
-	values          map[string]float64
-	prevStateAction [][]int
-	prevReward      float64
-	message         string
+	values map[string]float64
+	prev   struct {
+		state  MNKState
+		action MNKAction
+		reward float64
+	}
+	message string
 }
 
 type RLAgentKnowledge struct {
@@ -68,7 +71,9 @@ func (agent *RLAgent) FetchMessage() (message string) {
 	return
 }
 
-func (agent *RLAgent) FetchMove(state [][]int) (move int, err error) {
+func (agent *RLAgent) FetchMove(state State, possibleActions []Action) (Action, error) {
+	var s MNKState = state.(MNKState)
+	var action MNKAction
 	var moveValue float64
 
 	var e = rand.Float64()
@@ -76,66 +81,49 @@ func (agent *RLAgent) FetchMove(state [][]int) (move int, err error) {
 		agent.message = fmt.Sprintf("Exploratory action (%f)", e)
 
 		// Choose a random move
-		var emptyCells []int
-		for i := range state {
-			for j := range state[i] {
-				if state[i][j] == 0 {
-					emptyCells = append(emptyCells, i*agent.m+j+1)
-				}
-			}
-		}
-
-		move = emptyCells[rand.Intn(len(emptyCells))]
-		rlKnowledge.randomDispersion[move-1]++
-		var i = (move - 1) / agent.m
-		var j = (move - 1) % agent.m
-		state[i][j] = agent.id
-		moveValue = agent.lookup(state)
-		state[i][j] = 0
+		rndi := rand.Intn(len(possibleActions))
+		action = possibleActions[rndi].GetParams().(MNKAction)
+		rlKnowledge.randomDispersion[action.Y*agent.m+action.X]++
+		moveValue = agent.lookup(s, action)
 
 	} else {
 		agent.message = fmt.Sprintf("Greedy action (%f)", e)
 
 		// Choose a greedy move
-		var maxReward float64 = 0
-		var maxMove = 0
 		var first = true
+		for i := range s {
+			for j := range s[i] {
+				if s[i][j] == 0 {
+					a := MNKAction{i, j}
+					value := agent.lookup(s, a)
 
-		for i := range state {
-			for j := range state[i] {
-				if state[i][j] == 0 {
-					// REVIEW: Is tempState = copyState(state) too costly? Or perhaps do it in main
-					state[i][j] = agent.id
-					value := agent.lookup(state)
-					state[i][j] = 0
-
-					if value > maxReward || first {
-						maxReward = value
-						maxMove = i*agent.m + j + 1
+					if value > moveValue || first {
+						moveValue = value
+						action = a
 						first = false
 					}
 				}
 			}
 		}
-		move = maxMove
-		moveValue = maxReward
 	}
 
 	if agent.Learning {
 		agent.learn(moveValue)
 	}
 
-	agent.prevStateAction = copyState(state)
-	agent.prevStateAction[(move-1)/agent.m][(move-1)%agent.m] = agent.id
-	agent.prevReward = agent.value(agent.prevStateAction)
+	agent.prev.state = s //.Clone()
+	agent.prev.action = action
+	agent.prev.reward = agent.value(agent.prev.state, agent.prev.action)
 
-	return
+	return action, nil
 }
 
-func (agent *RLAgent) GameOver(state [][]int) {
+func (agent *RLAgent) GameOver(state State) {
+	var s MNKState = state.(MNKState)
+
 	if agent.Learning {
-		// TODO: Check for prevStateAction == state as well so we don't train twice
-		agent.learn(agent.value(state))
+		// Bypass the marshaller's action addition with (-1, -1)
+		agent.learn(agent.lookup(s, MNKAction{-1, -1}))
 	}
 
 	rlKnowledge.Iterations++
@@ -147,30 +135,31 @@ func (agent *RLAgent) GetSign() string {
 
 // learn calculates new value for given state
 func (agent *RLAgent) learn(qMax float64) {
-	var mState = marshallState(agent.prevStateAction, agent.id)
+	var mState = marshallState(agent.prev.state, agent.prev.action)
 	var oldVal = agent.values[mState]
 
 	// REVIEW: Learning Rate may decrease gradually (for stochastic environments)
 	// REVIEW: Discount Factor may increase gradually (when estimating reward)
 
 	agent.values[mState] = oldVal + (agent.LearningRate *
-		(agent.prevReward + (agent.DiscountFactor * qMax) - oldVal))
+		(agent.prev.reward + (agent.DiscountFactor * qMax) - oldVal))
 }
 
 // lookup returns the Q-value for the given state
-func (agent *RLAgent) lookup(state [][]int) float64 {
-	var mState = marshallState(state, agent.id) // Marshalled state
+func (agent *RLAgent) lookup(state MNKState, action MNKAction) float64 {
+	var mState = marshallState(state, action) // Marshalled state
 	val, ok := agent.values[mState]
 	if !ok {
-		val = agent.value(state)
+		val = agent.value(state, action)
 		agent.values[mState] = val
 	}
 	return val
 }
 
 // value returns the reward for the given state
-func (agent *RLAgent) value(state [][]int) float64 {
-	switch evaluate(state) {
+func (agent *RLAgent) value(state MNKState, action MNKAction) float64 {
+	// TODO: Fix this. The agent must have real access to the evaluation function
+	switch board.Evaluate() {
 	case agent.id: // Agent won
 		return 1
 	case 0: // Game goes on
@@ -224,29 +213,23 @@ func (k *RLAgentKnowledge) loadFromFile(path string) bool {
 	return true
 }
 
-func marshallState(state [][]int, agentID int) (m string) {
+func marshallState(state MNKState, action MNKAction) (m string) {
 	for i := range state {
 		for j := range state[i] {
-			// Regulate based on current agent's ID so all agents are one!
-			if state[i][j] > 0 {
-				if state[i][j] == agentID {
-					m += "X"
-				} else {
-					m += "O"
-				}
-			} else {
+			// Include action in state
+			if i == action.Y && j == action.X {
+				m += "X"
+				continue
+			}
+			switch state[i][j] {
+			case 1:
+				m += "X"
+			case -1:
+				m += "O"
+			default:
 				m += "-"
 			}
 		}
-	}
-	return
-}
-
-func copyState(state [][]int) (c [][]int) {
-	c = make([][]int, len(state))
-	for i := range state {
-		c[i] = make([]int, len(state[i]))
-		copy(c[i], state[i])
 	}
 	return
 }
