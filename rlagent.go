@@ -60,6 +60,11 @@ func NewRLAgent(id int, sign string, m, n, k int, learn bool) (agent *RLAgent) {
 	if rlKnowledge.Iterations == 0 {
 		rlKnowledge.Values = make(map[string]float64)
 		rlKnowledge.randomDispersion = make([]int, m*n)
+	} else {
+		var tmp []int = make([]int, len(rlKnowledge.randomDispersion))
+		copy(tmp, rlKnowledge.randomDispersion)
+		rlKnowledge.randomDispersion = make([]int, m*n)
+		copy(rlKnowledge.randomDispersion, tmp)
 	}
 	agent.values = rlKnowledge.Values
 
