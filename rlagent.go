@@ -36,7 +36,7 @@ type RLAgent struct {
 type RLAgentKnowledge struct {
 	Values           map[string]float64
 	Iterations       uint
-	randomDispersion [9]int
+	randomDispersion []int
 }
 
 var rlKnowledge RLAgentKnowledge
@@ -59,6 +59,7 @@ func NewRLAgent(id int, sign string, m, n, k int, learn bool) (agent *RLAgent) {
 	// Initiate stash
 	if rlKnowledge.Iterations == 0 {
 		rlKnowledge.Values = make(map[string]float64)
+		rlKnowledge.randomDispersion = make([]int, m*n)
 	}
 	agent.values = rlKnowledge.Values
 
