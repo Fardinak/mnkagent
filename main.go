@@ -95,15 +95,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Register SIGINT handler
-	sigint = make(chan os.Signal, 1)
-	signal.Notify(sigint, os.Interrupt)
-	go func(c <-chan os.Signal) {
-		<-c
-		flags["terminate"] = true
-	}(sigint)
-	defer close(sigint)
-
 	rand.Seed(time.Now().UTC().UnixNano())
 	readKnowledgeOK := rlKnowledge.loadFromFile(rlModelFile)
 
@@ -130,6 +121,17 @@ func main() {
 	}
 
 	if rlTrainingMode > 0 {
+		// Register SIGINT handler
+		sigint = make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt)
+		go func(c <-chan os.Signal) {
+			<-c
+			flags["terminate"] = true
+			signal.Reset(os.Interrupt)
+		}(sigint)
+		defer close(sigint)
+
+		// Start training loop
 		log := train(rlTrainingMode)
 		printStats(log, true)
 		return
