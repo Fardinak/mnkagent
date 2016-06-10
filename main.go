@@ -348,8 +348,8 @@ func newRound(turn int, visual bool) int {
 					fmt.Println("It's a DRAW!")
 				}
 
-				players[1].GameOver(board)
-				players[2].GameOver(board)
+				players[1].GameOver(board.GetState(1))
+				players[2].GameOver(board.GetState(2))
 				return 0
 
 			} else { // Current player won
@@ -358,8 +358,8 @@ func newRound(turn int, visual bool) int {
 						players[turn].GetSign())
 				}
 
-				players[1].GameOver(board)
-				players[2].GameOver(board)
+				players[1].GameOver(board.GetState(1))
+				players[2].GameOver(board.GetState(2))
 				return result
 			}
 		}
