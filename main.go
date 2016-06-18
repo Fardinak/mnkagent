@@ -360,7 +360,7 @@ func newRound(turn int, visual bool) int {
 
 				players[1].GameOver(board.GetState(1))
 				players[2].GameOver(board.GetState(2))
-				return result
+				return turn
 			}
 		}
 	}
