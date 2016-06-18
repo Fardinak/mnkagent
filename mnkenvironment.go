@@ -86,7 +86,6 @@ func (b *MNKBoard) Act(agentID int, action Action) (r float64, err error) {
 
 func (b *MNKBoard) Evaluate() int {
 	var (
-		// REVIEW: Is b.n-b.k+2 working correctly?
 		nRange int = b.n - b.k + 2
 		mRange int = b.m - b.k + 2
 
@@ -103,6 +102,7 @@ func (b *MNKBoard) Evaluate() int {
 		max = b.n
 	}
 
+	// REVIEW: This is a horror show, isn't it?!
 	for o := 0; o < max; o++ {
 		for i, oi := 0, o; i < max; i, oi = i+1, oi+1 { // oi: offset + i
 			// Row (o: Y, i: X)
@@ -175,7 +175,7 @@ func (b *MNKBoard) Evaluate() int {
 		countTRBLL = 1
 	}
 
-	// Continuality check
+	// Continuity check
 	for i := 0; i < b.m; i++ {
 		for j := 0; j < b.n; j++ {
 			if b.board[i][j] == 0 {
@@ -188,8 +188,8 @@ func (b *MNKBoard) Evaluate() int {
 	return -1
 }
 
-func (b *MNKBoard) EvaluateAction(agentID int, a Action) int {
-	aa := a.GetParams().(MNKAction)
+func (b *MNKBoard) EvaluateAction(agentID int, action Action) int {
+	a := action.GetParams().(MNKAction)
 
 	var (
 		row      bool = b.k <= b.m
@@ -203,31 +203,32 @@ func (b *MNKBoard) EvaluateAction(agentID int, a Action) int {
 		countRow, countCol, countTLBR, countTRBL int
 	)
 
+	// REVIEW: This is a horror show, isn't it? Really! We could just use multiple loops
 	for o := 0; !doneDiagonal || !doneOrthogonal; o++ {
 		if !doneDiagonal {
 			// To bottom-right
-			if !doneBR && aa.Y+o < b.n-1 && aa.X+o < b.m-1 && b.board[aa.Y+o+1][aa.X+o+1] == agentID {
+			if !doneBR && a.Y+o < b.n-1 && a.X+o < b.m-1 && b.board[a.Y+o+1][a.X+o+1] == agentID {
 				countTLBR++
 			} else {
 				doneBR = true
 			}
 
 			// To top-left
-			if !doneTL && aa.Y-o > 0 && aa.X-o > 0 && b.board[aa.Y-o-1][aa.X-o-1] == agentID {
+			if !doneTL && a.Y-o > 0 && a.X-o > 0 && b.board[a.Y-o-1][a.X-o-1] == agentID {
 				countTLBR++
 			} else {
 				doneTL = true
 			}
 
 			// To bottom-left
-			if !doneBL && aa.Y+o < b.n-1 && aa.X-o > 0 && b.board[aa.Y+o+1][aa.X-o-1] == agentID {
+			if !doneBL && a.Y+o < b.n-1 && a.X-o > 0 && b.board[a.Y+o+1][a.X-o-1] == agentID {
 				countTRBL++
 			} else {
 				doneBL = true
 			}
 
 			// To top-right
-			if !doneTR && aa.Y-o > 0 && aa.X+o < b.m-1 && b.board[aa.Y-o-1][aa.X+o+1] == agentID {
+			if !doneTR && a.Y-o > 0 && a.X+o < b.m-1 && b.board[a.Y-o-1][a.X+o+1] == agentID {
 				countTRBL++
 			} else {
 				doneTR = true
@@ -242,28 +243,28 @@ func (b *MNKBoard) EvaluateAction(agentID int, a Action) int {
 		}
 
 		// To bottom
-		if !doneB && col && aa.Y+o < b.n-1 && b.board[aa.Y+o+1][aa.X] == agentID {
+		if !doneB && col && a.Y+o < b.n-1 && b.board[a.Y+o+1][a.X] == agentID {
 			countCol++
 		} else {
 			doneB = true
 		}
 
 		// To top
-		if !doneT && col && aa.Y-o > 0 && b.board[aa.Y-o-1][aa.X] == agentID {
+		if !doneT && col && a.Y-o > 0 && b.board[a.Y-o-1][a.X] == agentID {
 			countCol++
 		} else {
 			doneT = true
 		}
 
 		// To right
-		if !doneR && row && aa.X+o < b.m-1 && b.board[aa.Y][aa.X+o+1] == agentID {
+		if !doneR && row && a.X+o < b.m-1 && b.board[a.Y][a.X+o+1] == agentID {
 			countRow++
 		} else {
 			doneR = true
 		}
 
 		// To left
-		if !doneL && row && aa.X-o > 0 && b.board[aa.Y][aa.X-o-1] == agentID {
+		if !doneL && row && a.X-o > 0 && b.board[a.Y][a.X-o-1] == agentID {
 			countRow++
 		} else {
 			doneL = true
@@ -277,7 +278,7 @@ func (b *MNKBoard) EvaluateAction(agentID int, a Action) int {
 		}
 	}
 
-	// Continuality check
+	// Continuity check
 	for i := 0; i < b.m; i++ {
 		for j := 0; j < b.n; j++ {
 			if b.board[i][j] == 0 {

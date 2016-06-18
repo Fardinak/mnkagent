@@ -80,7 +80,7 @@ func (agent *RLAgent) FetchMessage() (message string) {
 func (agent *RLAgent) FetchMove(state State, possibleActions []Action) (Action, error) {
 	var s MNKState = state.(MNKState)
 	var action MNKAction
-	var moveValue float64
+	var qMax float64
 
 	var e = rand.Float64()
 	if e < agent.ExplorationFactor {
@@ -90,7 +90,7 @@ func (agent *RLAgent) FetchMove(state State, possibleActions []Action) (Action, 
 		rndi := rand.Intn(len(possibleActions))
 		action = possibleActions[rndi].GetParams().(MNKAction)
 		rlKnowledge.randomDispersion[action.Y*agent.m+action.X]++
-		moveValue = agent.lookup(s, action)
+		qMax = agent.lookup(s, action)
 
 	} else {
 		agent.message = fmt.Sprintf("Greedy action (%f)", e)
@@ -101,10 +101,10 @@ func (agent *RLAgent) FetchMove(state State, possibleActions []Action) (Action, 
 			for j := range s[i] {
 				if s[i][j] == 0 {
 					a := MNKAction{i, j}
-					value := agent.lookup(s, a)
+					v := agent.lookup(s, a)
 
-					if value > moveValue || first {
-						moveValue = value
+					if v > qMax || first {
+						qMax = v
 						action = a
 						first = false
 					}
@@ -114,7 +114,7 @@ func (agent *RLAgent) FetchMove(state State, possibleActions []Action) (Action, 
 	}
 
 	if agent.Learning {
-		agent.learn(moveValue)
+		agent.learn(qMax)
 	}
 
 	agent.prev.state = s //.Clone()
