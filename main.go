@@ -300,25 +300,14 @@ func newRound(turn int, visual bool) int {
 			panic(err)
 		}
 
-		var termW int
-		if visual {
-			termW, _ = getTermSize()
-		}
-
 		_, err = board.Act(turn, action)
 		if err != nil {
 			// Clear prompt
-			for i := 0; i < termW; i++ {
-				fmt.Print(" ")
-			}
-			fmt.Print("\r", err)
+			fmt.Print("\033[2K\r", err)
 		} else {
 			if visual {
 				// Clear previous messages
-				for i := 0; i < termW; i++ {
-					fmt.Print(" ")
-				}
-				fmt.Printf("\rAgent %s: %s / Agent %s: %s",
+				fmt.Printf("\033[2K\rAgent %s: %s / Agent %s: %s",
 					players[1].GetSign(), players[1].FetchMessage(),
 					players[2].GetSign(), players[2].FetchMessage())
 
@@ -329,15 +318,7 @@ func newRound(turn int, visual bool) int {
 
 			if visual && result != 0 { // Game ended
 				// Clear prompt
-				for i := 0; i < 2; i++ {
-					for j := 0; j < termW; j++ {
-						fmt.Print(" ")
-					}
-					if i == 0 {
-						fmt.Print("\n")
-					}
-				}
-				fmt.Print("\r")
+				fmt.Print("\033[2K\n\033[2K\r")
 			}
 
 			if result == 0 { // The game goes on
