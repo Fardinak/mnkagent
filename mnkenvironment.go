@@ -146,7 +146,7 @@ func (b *MNKBoard) Evaluate() int {
 			}
 
 			// Top-Right to Bottom-Left upper half (o: Offset, o+i: Y, b.n-o-i: X)
-			if i < mRange && oi < b.n && b.board[i][b.n-oi-1] == b.board[i+1][b.n-oi-2] {
+			if i < mRange && b.n-oi > 1 && b.board[i][b.n-oi-1] == b.board[i+1][b.n-oi-2] {
 				countTRBLU++
 				if countTRBLU >= b.k {
 					return b.board[i][b.n-oi]
