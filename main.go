@@ -67,7 +67,7 @@ func init() {
 }
 
 func main() {
-	fmt.Println("MNK Agent v1")
+	fmt.Println("MNK Agent v2")
 
 	if gomoku {
 		m = 19
