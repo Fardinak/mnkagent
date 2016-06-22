@@ -148,8 +148,17 @@ func train(rounds uint) (log []int) {
 		return
 	}
 
-	players[1] = NewRLAgent(1, X, m, n, k, true)
-	players[2] = NewRLAgent(2, O, m, n, k, true)
+	p1 := NewRLAgent(1, X, m, n, k, true)
+	p1.LearningRate = 0.2       // Default: 0.2
+	p1.DiscountFactor = 0.8     // Default: 0.8
+	p1.ExplorationFactor = 0.25 // Default: 0.25
+	p2 := NewRLAgent(2, O, m, n, k, true)
+	p2.LearningRate = 0.2       // Default: 0.2
+	p2.DiscountFactor = 0.8     // Default: 0.8
+	p2.ExplorationFactor = 0.25 // Default: 0.25
+
+	players[1] = p1
+	players[2] = p2
 
 	var (
 		// For the game
