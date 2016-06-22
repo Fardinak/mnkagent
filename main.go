@@ -77,7 +77,7 @@ func init() {
 }
 
 func main() {
-	fmt.Println("Tic-Tac-Toe v1")
+	fmt.Println("MNK Agent v1")
 
 	if inarow > dx && inarow > dy {
 		fmt.Printf("There can not exist %d marks in a row, on a %dx%d board",
