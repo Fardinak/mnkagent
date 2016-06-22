@@ -85,6 +85,10 @@ func (b *MNKBoard) Act(agentID int, action Action) (r float64, err error) {
 }
 
 func (b *MNKBoard) Evaluate() int {
+	// REVIEW: Using State Strings and Regular Expressions
+	// pattern := regexp.MustCompile(fmt.Sprintf("((X[-OX|]{%d}){%d}X)|((X[-OX|]{%d}){%d}X)|((X[-OX|]{%d}){%d}X)|(\|[-OX]*X{%d}[-OX]*\|)", b.n, b.k-1, b.n+1, b.k-1, b.n-1, b.k-1, b.k))
+	// result := pattern.MatchString(state.String())
+
 	var (
 		nRange int = b.n - b.k + 2
 		mRange int = b.m - b.k + 2
