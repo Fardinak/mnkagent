@@ -1,24 +1,24 @@
 // The implementation of an m,n,k-game with swappable Agents
 package main
 
-// NOTE: X Axis: j, m, dx; Y Axis: i, n, dy
-
 import (
 	"flag"
 	"fmt"
 	"math/rand"
 	"os"
-	"strconv"
+	"os/exec"
+	"os/signal"
 	"time"
 )
 
 // Flags
 var (
 	// Game flags
-	dx        int
-	dy        int
-	inarow    int
+	m         int
+	n         int
+	k         int
 	noDisplay bool
+	gomoku    bool
 
 	// RL flags
 	rlModelFile       string
@@ -26,6 +26,9 @@ var (
 	rlNoLearn         bool
 	rlTrainingMode    uint
 )
+
+// Signal channel
+var sigint chan os.Signal
 
 // Signs
 const (
@@ -36,33 +39,20 @@ const (
 var players = [3]Agent{
 	nil, // No one
 	NewHumanAgent(1, X),
-	NewRLAgent(2, O, dx, dy, inarow, !rlNoLearn),
+	NewRLAgent(2, O, m, n, k, !rlNoLearn),
 }
 var rounds int
-var board [][]int
+var board *MNKBoard
 var flags = make(map[string]bool)
-
-type Agent interface {
-	// FetchMessage returns agent's messages, if any
-	FetchMessage() string
-
-	// FetchMove returns the agent's move based on given state
-	FetchMove([][]int) (int, error)
-
-	// GameOver states that the game is over and that the latest state should be saved
-	GameOver([][]int)
-
-	// GetSign returns the agent's sign (X|O)
-	GetSign() string
-}
 
 func init() {
 	// Game flags
-	flag.IntVar(&dx, "m", 3, "Board dimention across the horizontal (x) axis")
-	flag.IntVar(&dy, "n", 3, "Board dimention across the vertical (y) axis")
-	flag.IntVar(&inarow, "k", 3, "Number of marks in a row")
+	flag.IntVar(&m, "m", 3, "Board dimention across the horizontal (x) axis")
+	flag.IntVar(&n, "n", 3, "Board dimention across the vertical (y) axis")
+	flag.IntVar(&k, "k", 3, "Number of marks in a row")
 	flag.BoolVar(&noDisplay, "no-display", false, "Do now show board and "+
 		"stats in training mode")
+	flag.BoolVar(&gomoku, "gomoku", false, "Shortcut for a 19,19,5 game (overrides m, n and k)")
 
 	// RL flags
 	flag.StringVar(&rlModelFile, "rl-model", "rl.kw", "RL trained model file "+
@@ -79,9 +69,16 @@ func init() {
 func main() {
 	fmt.Println("MNK Agent v1")
 
-	if inarow > dx && inarow > dy {
-		fmt.Printf("There can not exist %d marks in a row, on a %dx%d board",
-			inarow, dx, dy)
+	if gomoku {
+		m = 19
+		n = 19
+		k = 5
+	}
+
+	var err error
+	board, err = NewMNKBoard(m, n, k)
+	if err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
 
@@ -111,13 +108,24 @@ func main() {
 	}
 
 	if rlTrainingMode > 0 {
+		// Register SIGINT handler
+		sigint = make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt)
+		go func(c <-chan os.Signal) {
+			<-c
+			flags["terminate"] = true
+			signal.Reset(os.Interrupt)
+		}(sigint)
+		defer close(sigint)
+
+		// Start training loop
 		log := train(rlTrainingMode)
 		printStats(log, true)
 		return
 	}
 
 	fmt.Printf("? > How many rounds shall we play? ")
-	_, err := fmt.Scanln(&rounds)
+	_, err = fmt.Scanln(&rounds)
 	if err != nil {
 		fmt.Println("\n[error] Shit happened!")
 		panic(err)
@@ -140,12 +148,63 @@ func train(rounds uint) (log []int) {
 		return
 	}
 
-	players[1] = NewRLAgent(1, X, dx, dy, inarow, true)
-	players[2] = NewRLAgent(2, O, dx, dy, inarow, true)
+	p1 := NewRLAgent(1, X, m, n, k, true)
+	p1.LearningRate = 0.2       // Default: 0.2
+	p1.DiscountFactor = 0.8     // Default: 0.8
+	p1.ExplorationFactor = 0.25 // Default: 0.25
+	p2 := NewRLAgent(2, O, m, n, k, true)
+	p2.LearningRate = 0.2       // Default: 0.2
+	p2.DiscountFactor = 0.8     // Default: 0.8
+	p2.ExplorationFactor = 0.25 // Default: 0.25
 
-	var c uint
-	var turn int
+	players[1] = p1
+	players[2] = p2
+
+	var (
+		// For the game
+		c    uint
+		turn int
+
+		// For the progress bar
+		termW         int
+		cleanupLine   string
+		displayH      int = n*2 + 3
+		displayBottom string
+		displayTop    string
+		progress      int
+		progressbar   string
+		color         string = "\033[41;3m"
+		colorDone     string = "\033[46;3m"
+	)
+
+	for i := 0; i <= displayH; i++ {
+		displayBottom += "\n"
+		displayTop += "\033[F"
+	}
+
 	for c, turn = 1, 1; c <= rounds; c++ {
+		pTick := c*100%rounds == 0
+		if pTick || c == 1 {
+			// Get terminal width
+			termW, _ = getTermSize()
+
+			// Generate cleanup line for terminal width
+			cleanupLine = ""
+			for i := 0; i < termW; i++ {
+				cleanupLine += " "
+			}
+			cleanupLine += "\r"
+
+			// Track progress
+			progress = int(c * 100 / rounds)
+			progressbar = generateProgressBar(progress, termW, color, "Training...")
+		}
+
+		if pTick || !noDisplay {
+			// Clear the progress bar
+			fmt.Print(cleanupLine)
+		}
+
 		// Start a new round and get the winner's id
 		turn = newRound(turn, !noDisplay) // Previous round's winner starts the game
 		log[turn]++                       // Keep scores
@@ -154,17 +213,41 @@ func train(rounds uint) (log []int) {
 		}
 
 		if !noDisplay {
-			fmt.Print("___________________________________\n\n")
+			// Print separator and cleanup progress bar
+			fmt.Printf("___________________________________\n%s\n", cleanupLine)
 		}
 
-		if !rlNoLearn && c%1000 == 0 { // Store knowledge every 1K rounds
+		if flags["terminate"] {
+			fmt.Print("\r", generateProgressBar(progress, termW, color, "Terminated."), "\n")
+			if !rlNoLearn {
+				rlKnowledge.saveToFile(rlModelFile)
+			}
+			return
+		}
+
+		if pTick || !noDisplay {
+			if !noDisplay && c != rounds {
+				// If not 100%, leave room for next board display
+				fmt.Print(displayBottom)
+			}
+
+			// Print progress bar
+			fmt.Print(progressbar)
+
+			if !noDisplay && c != rounds {
+				// If not 100%, go to display 0x0
+				fmt.Print(displayTop)
+			}
+		}
+
+		if !rlNoLearn && pTick {
+			// Store knowledge every 1/100 of rounds
 			rlKnowledge.saveToFile(rlModelFile)
 		}
 	}
 
-	if !rlNoLearn {
-		rlKnowledge.saveToFile(rlModelFile)
-	}
+	// Progress bar final touch
+	fmt.Print(generateProgressBar(100, termW, colorDone, "Training completed"), "\n")
 
 	return
 }
@@ -179,14 +262,15 @@ func play(rounds int) (log []int) {
 	}
 
 	players[1] = NewHumanAgent(1, X)
-	players[2] = NewRLAgent(2, O, dx, dy, inarow, !rlNoLearn)
+	players[2] = NewRLAgent(2, O, m, n, k, !rlNoLearn)
 
 	for c, turn := 1, 1; c <= rounds; c++ {
 		// Start a new round and get the winner's id
+		pTurn := turn
 		turn = newRound(turn, true) // Previous round's winner starts the game
 		log[turn]++                 // Keep scores
 		if turn == 0 {              // If it was a draw, next player starts the game
-			turn = getNextPlayer(turn)
+			turn = getNextPlayer(pTurn)
 		}
 
 		fmt.Print("___________________________________\n\n")
@@ -201,14 +285,14 @@ func play(rounds int) (log []int) {
 // newRound starts a new round
 func newRound(turn int, visual bool) int {
 	// Reset board
-	initBoard(dx, dy)
+	board.Reset()
 
 	// Set runtime flags
 	flags["first_run"] = true
 
 	if visual {
 		// Draw a new board
-		display(board)
+		display(board.GetWorld())
 	}
 
 	// Who starts the game if not specified
@@ -218,58 +302,63 @@ func newRound(turn int, visual bool) int {
 
 	// Start the game
 	for {
-		pos, err := players[turn].FetchMove(board)
+		action, err := players[turn].FetchMove(
+			board.GetState(turn),
+			board.GetPotentialActions(turn))
 		if err != nil {
-			fmt.Println("\n\n[error] Shit happened!")
 			panic(err)
 		}
 
-		if !move(turn, pos) {
-			fmt.Print("Invalid move!                      ")
+		_, err = board.Act(turn, action)
+		if err != nil {
+			// Clear prompt
+			fmt.Print("\033[2K\r", err)
 		} else {
 			if visual {
 				// Clear previous messages
-				fmt.Print("                                   \r")
-				fmt.Printf("Agent %s: %s / Agent %s: %s",
+				fmt.Printf("\033[2K\rAgent %s: %s / Agent %s: %s",
 					players[1].GetSign(), players[1].FetchMessage(),
 					players[2].GetSign(), players[2].FetchMessage())
 
-				display(board)
+				display(board.GetWorld())
 			}
 
-			var result = evaluate(board)
+			var result = board.EvaluateAction(turn, action)
+
+			if visual && result != 0 { // Game ended
+				// Clear prompt
+				fmt.Print("\033[2K\n\033[2K\r")
+			}
+
 			if result == 0 { // The game goes on
 				turn = getNextPlayer(turn)
 
 			} else if result == -1 { // Draw
 				if visual {
-					// Clear prompt
-					fmt.Print("\n                         \r")
 					fmt.Println("It's a DRAW!")
 				}
 
-				players[1].GameOver(board)
-				players[2].GameOver(board)
+				players[1].GameOver(board.GetState(1))
+				players[2].GameOver(board.GetState(2))
 				return 0
 
-			} else { // Someone won
+			} else { // Current player won
 				if visual {
-					fmt.Print("                                   \n")
 					fmt.Printf("We have a WINNER! Congratulations %s\n",
-						players[result].GetSign())
+						players[turn].GetSign())
 				}
 
-				players[1].GameOver(board)
-				players[2].GameOver(board)
-				return result
+				players[1].GameOver(board.GetState(1))
+				players[2].GameOver(board.GetState(2))
+				return turn
 			}
 		}
 	}
 }
 
 // display draws the board on the terminal
-// TODO: Move this to Human Agent
-func display(board [][]int) {
+func display(board State) {
+	var b MNKState = board.(MNKState)
 	var mark string
 
 	if flags["first_run"] {
@@ -277,20 +366,20 @@ func display(board [][]int) {
 	} else {
 		// Reset to app's 0x0 position
 		reset := "\r"
-		for i := 0; i < dy*2+1; i++ {
+		for i := 0; i < n*2+1; i++ {
 			reset += "\033[F"
 		}
 		fmt.Print(reset)
 	}
 
-	for i := 0; i < dy; i++ {
+	for i := 0; i < n; i++ {
 		line := ""
 		if i == 0 {
 			// Top
 			line = "\u2554"
-			for j := 0; j < dx; j++ {
+			for j := 0; j < m; j++ {
 				line += "\u2550\u2550\u2550\u2550\u2550"
-				if j < dx-1 {
+				if j < m-1 {
 					line += "\u2564"
 				} else {
 					line += "\u2557"
@@ -299,9 +388,9 @@ func display(board [][]int) {
 		} else {
 			// Middle
 			line = "\u2551"
-			for j := 0; j < dx; j++ {
+			for j := 0; j < m; j++ {
 				line += "\u2500\u2500\u2500\u2500\u2500"
-				if j < dx-1 {
+				if j < m-1 {
 					line += "\u253c"
 				} else {
 					line += "\u2551"
@@ -311,26 +400,28 @@ func display(board [][]int) {
 		fmt.Println(line)
 
 		line = "\u2551"
-		for j := 0; j < dx; j++ {
+		for j := 0; j < m; j++ {
 			if j != 0 {
 				line += "\u2502"
 			}
 
-			index := i*dx + j + 1
-
-			if board[i][j] == 0 {
-				mark = fmt.Sprintf("\033[37m%s\033[0m", strconv.Itoa(index))
-			} else {
-				mark = players[board[i][j]].GetSign()
-			}
-
+			index := i*m + j + 1
 			padding := [2]string{"", ""}
-			if index < 10 {
+
+			if b[i][j] == 0 {
+				mark = fmt.Sprintf("\033[37m%d\033[0m", index)
+
+				if index < 10 {
+					padding = [2]string{"  ", "  "}
+				} else if index < 100 {
+					padding = [2]string{" ", "  "}
+				} else if index < 1000 {
+					padding = [2]string{" ", " "}
+				}
+
+			} else {
+				mark = players[b[i][j]].GetSign()
 				padding = [2]string{"  ", "  "}
-			} else if index < 100 {
-				padding = [2]string{" ", "  "}
-			} else if index < 1000 {
-				padding = [2]string{" ", " "}
 			}
 
 			line += padding[0]
@@ -340,12 +431,12 @@ func display(board [][]int) {
 		line += "\u2551"
 		fmt.Println(line)
 
-		if i+1 == len(board) {
+		if i+1 == len(b) {
 			// Bottom
 			line = "\u255a"
-			for j := 0; j < dx; j++ {
+			for j := 0; j < m; j++ {
 				line += "\u2550\u2550\u2550\u2550\u2550"
-				if j < dx-1 {
+				if j < m-1 {
 					line += "\u2567"
 				} else {
 					line += "\u255d"
@@ -377,98 +468,12 @@ func printStats(log []int, rmd bool) {
 	}
 }
 
-// move registers a move on the board
-func move(player int, pos int) bool {
-	if pos > dx*dy {
-		return false
-	}
-
-	var i = (pos - 1) / dx
-	var j = (pos - 1) % dx
-
-	if board[i][j] != 0 {
-		return false
-	}
-
-	board[i][j] = player
-	return true
-}
-
-// Evaluates the board and returns
-//   -1: Draw
-//    0: Game continues
-//   >1: Winner's id
-func evaluate(board [][]int) int {
-	var b = board
-	var i, j int
-
-	// REVIEW: There must be a better solution to this
-
-	if inarow <= dx && inarow <= dy {
-		// Check top-left to bottom-right
-		for i = 0; i < dy-1 && i < dx-1 && b[i][i] == b[i+1][i+1]; i++ {
-			if i >= inarow-2 && b[i][i] != 0 {
-				return b[i][i]
-			}
-		}
-
-		// Check top-right to bottom left
-		for i = 0; i < dy-1 && i < dx-1 && b[i][dx-i-1] == b[i+1][dx-i-2]; i++ { // Check i,d-i
-			if i >= inarow-2 && b[i][dx-i-1] != 0 {
-				return b[i][dx-i-1]
-			}
-		}
-	}
-
-	if inarow <= dx {
-		// Check all rows
-		for i = 0; i < dy; i++ {
-			for j = 0; j < dx-1 && b[i][j] == b[i][j+1]; j++ { // Check i,j
-				if j >= inarow-2 && b[i][j] != 0 {
-					return b[i][j]
-				}
-			}
-		}
-	}
-
-	if inarow <= dy {
-		// Check all columns
-		for j = 0; j < dx; j++ {
-			for i = 0; i < dy-1 && b[i][j] == b[i+1][j]; i++ { // Check j,i
-				if i >= inarow-2 && b[i][j] != 0 {
-					return b[i][j]
-				}
-			}
-		}
-	}
-
-	// Check if there is any empty room
-	for i = range board {
-		for j = range board[i] {
-			if board[i][j] == 0 {
-				return 0
-			}
-		}
-	}
-
-	// It's a draw if none has retuned
-	return -1
-}
-
 // getNextPlayer returns the next player's id
 func getNextPlayer(current int) int {
 	if current < len(players)-1 {
 		return current + 1
 	}
 	return 1
-}
-
-// initBoard makes a 2D slice, limited to dimensions
-func initBoard(m, n int) {
-	board = make([][]int, n)
-	for i := range board {
-		board[i] = make([]int, m)
-	}
 }
 
 // Get the key of the maximum array item
@@ -489,4 +494,70 @@ func fileAccessible(path string) (err error) {
 	f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
 	defer f.Close()
 	return
+}
+
+// Get terminal size
+func getTermSize() (w int, h int) {
+	// TODO: Use a terminal ui library like termbox-go
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = os.Stdin
+	d, _ := cmd.Output()
+	fmt.Sscan(string(d), &h, &w)
+	return
+}
+
+// generateProgressBar constructs a progress bar with given information
+func generateProgressBar(progress, width int, color string, msg string) string {
+	var reset = []byte("\033[0m")
+	var ellipsis = []byte("...")
+	var fProgress = fmt.Sprintf("%d%%", progress)
+	var pb = make([]byte, width, 2*width+20)
+	var m = make([]byte, len(msg), len(msg)+len(ellipsis))
+	var p = make([]byte, len(fProgress))
+
+	// Generate progress indicator string
+	copy(p, fProgress)
+
+	// Truncate message if necessary
+	// TODO: Either escape special commands like color, or take care not to truncate them
+	copy(m, msg)
+	if len(m) > width-8 {
+		m = m[:width-5-len(ellipsis)]
+		copy(m[len(m)-len(ellipsis):], ellipsis)
+	}
+
+	// Fill buffer with empty space
+	for i := 0; i < width; i++ {
+		copy(pb[i:], " ")
+	}
+
+	// Progress indicator position
+	pIndex := width*progress/100 + len(color)
+	// Message position
+	mOffset := (width-8)/2 - len(m)/2
+	if mOffset < 1 {
+		mOffset = 1
+	}
+
+	// Buffer message
+	copy(pb[mOffset:], m)
+
+	// Buffer progress indicator
+	copy(pb[len(pb)-len(p)-1:], p)
+
+	// Extend buffer to support color, reset and BOL
+	pb = pb[0 : len(pb)+len(color)+len(reset)+len("\r")]
+
+	// Add progress color
+	copy(pb[len(color):], pb[:])
+	copy(pb[:len(color)], color)
+
+	// Reset progress color
+	copy(pb[pIndex+len(reset):], pb[pIndex:])
+	copy(pb[pIndex:pIndex+len(reset)], reset)
+
+	// Set cursor to BOL
+	copy(pb[len(pb)-len("\r"):], "\r")
+
+	return string(pb)
 }
