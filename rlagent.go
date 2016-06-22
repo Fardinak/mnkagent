@@ -188,7 +188,7 @@ func (k *RLAgentKnowledge) saveToFile(path string) bool {
 	defer file.Close()
 
 	enc := gob.NewEncoder(file)
-	err = enc.Encode(rlKnowledge)
+	err = enc.Encode(k)
 	if err != nil {
 		fmt.Println("[error] Encoding of knowledge failed!")
 		fmt.Println(err)
@@ -209,7 +209,7 @@ func (k *RLAgentKnowledge) loadFromFile(path string) bool {
 	defer file.Close()
 
 	dec := gob.NewDecoder(file)
-	err = dec.Decode(&rlKnowledge)
+	err = dec.Decode(k)
 	if err != nil {
 		fmt.Println("[error] Decoding of knowledge failed!")
 		fmt.Println(err)
