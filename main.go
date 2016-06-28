@@ -206,10 +206,11 @@ func train(rounds uint) (log []int) {
 		}
 
 		// Start a new round and get the winner's id
+		pTurn := turn
 		turn = newRound(turn, !noDisplay) // Previous round's winner starts the game
 		log[turn]++                       // Keep scores
 		if turn == 0 {                    // If it was a draw, next player starts the game
-			turn = getNextPlayer(turn)
+			turn = getNextPlayer(pTurn)
 		}
 
 		if !noDisplay {
