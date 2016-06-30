@@ -78,6 +78,7 @@ func (agent *RLAgent) FetchMessage() (message string) {
 }
 
 func (agent *RLAgent) FetchMove(state State, possibleActions []Action) (Action, error) {
+	// REVIEW: Rename to Move, and accept a function to do it, which returns the reward
 	var s MNKState = state.(MNKState)
 	var action MNKAction
 	var qMax float64

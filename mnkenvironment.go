@@ -25,6 +25,7 @@ func NewMNKBoard(m, n, k int) (b *MNKBoard, err error) {
 }
 
 func (b *MNKBoard) GetState(agentID int) State {
+	// TODO: Remove POV from GetState
 	var s MNKState = b.board.Clone()
 
 	// Create populate the board with 0: empty, 1: agent's, -1: rival's
