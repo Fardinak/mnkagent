@@ -15,11 +15,11 @@ func NewHumanAgent(id int, sign string) (agent *HumanAgent) {
 }
 
 func (agent *HumanAgent) FetchMessage() string {
-	return "-"
+	return ""
 }
 
 func (agent *HumanAgent) FetchMove(state State, pa []Action) (action Action, err error) {
-	fmt.Print("\n                         \r")
+	fmt.Print("\n\033[2K\r")
 	fmt.Printf("%s > Your move? ", agent.Sign)
 
 	var pos int
@@ -28,7 +28,7 @@ func (agent *HumanAgent) FetchMove(state State, pa []Action) (action Action, err
 	fmt.Print("\r\033[F\033[F")
 
 	if err != nil {
-		return MNKAction{-1, -1}, err
+		return action, err
 	}
 
 	// TODO: Fix this. The agent must have real access to these variables! (board.m)
