@@ -73,7 +73,7 @@ func NewRLAgent(id int, sign string, m, n, k int, learn bool) (agent *RLAgent) {
 
 func (agent *RLAgent) FetchMessage() (message string) {
 	message = agent.message
-	agent.message = "-"
+	agent.message = ""
 	return
 }
 
@@ -133,6 +133,12 @@ func (agent *RLAgent) GameOver(state State) {
 		agent.learn(agent.lookup(s, MNKAction{-1, -1}))
 	}
 
+	// Restart for the next episode
+	agent.prev.state = MNKState{}
+	agent.prev.action = MNKAction{}
+	agent.prev.reward = 0
+	agent.message = ""
+
 	rlKnowledge.Iterations++
 }
 
@@ -142,6 +148,11 @@ func (agent *RLAgent) GetSign() string {
 
 // learn calculates new value for given state
 func (agent *RLAgent) learn(qMax float64) {
+	// Ignore an empty state-action (happens on first move)
+	if len(agent.prev.state) == 0 {
+		return
+	}
+
 	var mState = marshallState(agent.prev.state, agent.prev.action)
 	var oldVal = agent.values[mState]
 
