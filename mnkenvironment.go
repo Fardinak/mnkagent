@@ -86,98 +86,88 @@ func (b *MNKBoard) Act(agentID int, action Action) (r float64, err error) {
 }
 
 func (b *MNKBoard) Evaluate() int {
-	// REVIEW: Using State Strings and Regular Expressions
-	// pattern := regexp.MustCompile(fmt.Sprintf("((X[-OX|]{%d}){%d}X)|((X[-OX|]{%d}){%d}X)|((X[-OX|]{%d}){%d}X)|(\|[-OX]*X{%d}[-OX]*\|)", b.n, b.k-1, b.n+1, b.k-1, b.n-1, b.k-1, b.k))
-	// result := pattern.MatchString(state.String())
-
-	var (
-		nRange int = b.n - b.k + 2
-		mRange int = b.m - b.k + 2
-
-		countRow   int = 1
-		countCol   int = 1
-		countTLBRU int = 1
-		countTLBRL int = 1
-		countTRBLU int = 1
-		countTRBLL int = 1
-	)
-
-	var max int = b.m
-	if b.n > max {
-		max = b.n
-	}
-
-	// REVIEW: This is a horror show, isn't it?!
-	for o := 0; o < max; o++ {
-		for i, oi := 0, o; i < max; i, oi = i+1, oi+1 { // oi: offset + i
-			// Row (o: Y, i: X)
-			if o < b.m && i < nRange && b.board[o][i] == b.board[o][i+1] {
-				countRow++
-				if countRow >= b.k {
-					return b.board[o][i]
+	// Rows
+	for i, c := 0, 1; i < b.m; i, c = i+1, 1 {
+		for j := 0; j < b.n-1; j++ {
+			if b.board[i][j] == b.board[i][j+1] {
+				c++
+				if c >= b.k && b.board[i][j] > 0 {
+					return b.board[i][j]
 				}
 			} else {
-				countRow = 1
-			}
-
-			// Col (o: X, i: Y)
-			if o < b.n && i < mRange && b.board[i][o] == b.board[i+1][o] {
-				countCol++
-				if countCol >= b.k {
-					return b.board[i][o]
-				}
-			} else {
-				countCol = 1
-			}
-
-			// Top-Left to Bottom-Right upper half (o: Offset, i: Y, o+i: X)
-			if i < mRange && oi < nRange && b.board[i][oi] == b.board[i+1][oi+1] {
-				countTLBRU++
-				if countTLBRU >= b.k {
-					return b.board[i][oi]
-				}
-			} else {
-				countTLBRU = 1
-			}
-
-			// Top-Left to Bottom-Right lower half (o: Offset, i: Y, o+i: X)
-			if oi < mRange && i < nRange && b.board[oi][i] == b.board[oi+1][i+1] { // o > 0 feels optional!
-				countTLBRL++
-				if countTLBRL >= b.k {
-					return b.board[oi][i]
-				}
-			} else {
-				countTLBRL = 1
-			}
-
-			// Top-Right to Bottom-Left upper half (o: Offset, o+i: Y, b.n-o-i: X)
-			if i < mRange && b.n-oi > 1 && b.board[i][b.n-oi-1] == b.board[i+1][b.n-oi-2] {
-				countTRBLU++
-				if countTRBLU >= b.k {
-					return b.board[i][b.n-oi]
-				}
-			} else {
-				countTRBLU = 1
-			}
-
-			// Top-Right to Bottom-Left lower half (o: Offset, o-i: Y, b.n-o-i: X)
-			if oi < mRange && i < b.n && b.board[oi][b.n-i-1] == b.board[oi+1][b.n-i-2] { // o > 0 feels optional!
-				countTRBLL++
-				if countTRBLL >= b.k {
-					return b.board[oi][b.n-i]
-				}
-			} else {
-				countTRBLL = 1
+				c = 1
 			}
 		}
+	}
 
-		// Reset counters
-		countRow = 1
-		countCol = 1
-		countTLBRU = 1
-		countTLBRL = 1
-		countTRBLU = 1
-		countTRBLL = 1
+	// Columns
+	for j, c := 0, 1; j < b.n; j, c = j+1, 1 {
+		for i := 0; i < b.m-1; i++ {
+			if b.board[i][j] == b.board[i+1][j] {
+				c++
+				if c >= b.k && b.board[i][j] > 0 {
+					return b.board[i][j]
+				}
+			} else {
+				c = 1
+			}
+		}
+	}
+
+	// TL-BR upper
+	for o, c := 0, 1; o <= b.n-b.k; o, c = o+1, 1 {
+		for i := 0; i < b.m-o-1 && i < b.n-o-1; i++ {
+			if b.board[i][o+i] == b.board[i+1][o+i+1] {
+				c++
+				if c >= b.k && b.board[i][o+i] > 0 {
+					return b.board[i][o+i]
+				}
+			} else {
+				c = 1
+			}
+		}
+	}
+
+	// TL-BR lower
+	for o, c := 1, 1; o <= b.m-b.k; o, c = o+1, 1 {
+		for i := 0; i < b.m-o-1 && i < b.n-o-1; i++ {
+			if b.board[o+i][i] == b.board[o+i+1][i+1] {
+				c++
+				if c >= b.k && b.board[o+i][i] > 0 {
+					return b.board[o+i][i]
+				}
+			} else {
+				c = 1
+			}
+		}
+	}
+
+	// TR-BL upper
+	for o, c := 0, 1; o <= b.n-b.k; o, c = o+1, 1 {
+		for i := 0; i < b.m-o-1 && i < b.n-o-1; i++ {
+			if b.board[i][b.n-o-i-1] == b.board[i+1][b.n-o-i-2] {
+				c++
+				if c >= b.k && b.board[i][b.n-o-i-1] > 0 {
+					return b.board[i][b.n-o-i-1]
+				}
+			} else {
+				c = 1
+			}
+		}
+	}
+
+	// TR-BL lower
+	for o, c := 1, 1; o <= b.m-b.k; o, c = o+1, 1 {
+		for i := 0; i < b.m-o-1 && i < b.n-o-1; i++ {
+			if b.board[i+o][b.n-i-1] == b.board[i+o+1][b.n-i-2] {
+				c++
+				if c >= b.k && b.board[i+o][b.n-i-1] > 0 {
+					return b.board[i+o][b.n-i-1]
+				}
+			} else {
+				c = 1
+			}
+		}
 	}
 
 	// Continuity check
@@ -212,29 +202,37 @@ func (b *MNKBoard) EvaluateAction(agentID int, action Action) int {
 	for o := 0; !doneDiagonal || !doneOrthogonal; o++ {
 		if !doneDiagonal {
 			// To bottom-right
-			if !doneBR && a.Y+o < b.n-1 && a.X+o < b.m-1 && b.board[a.Y+o+1][a.X+o+1] == agentID {
-				countTLBR++
+			if !doneBR && a.Y+o < b.n-1 && a.X+o < b.m-1 {
+				if b.board[a.Y+o+1][a.X+o+1] == agentID {
+					countTLBR++
+				} // REVIEW: else if x > n - k && y > m - k { doneBR = true }
 			} else {
 				doneBR = true
 			}
 
 			// To top-left
-			if !doneTL && a.Y-o > 0 && a.X-o > 0 && b.board[a.Y-o-1][a.X-o-1] == agentID {
-				countTLBR++
+			if !doneTL && a.Y-o > 0 && a.X-o > 0 {
+				if b.board[a.Y-o-1][a.X-o-1] == agentID {
+					countTLBR++
+				}
 			} else {
 				doneTL = true
 			}
 
 			// To bottom-left
-			if !doneBL && a.Y+o < b.n-1 && a.X-o > 0 && b.board[a.Y+o+1][a.X-o-1] == agentID {
-				countTRBL++
+			if !doneBL && a.Y+o < b.n-1 && a.X-o > 0 {
+				if b.board[a.Y+o+1][a.X-o-1] == agentID {
+					countTRBL++
+				}
 			} else {
 				doneBL = true
 			}
 
 			// To top-right
-			if !doneTR && a.Y-o > 0 && a.X+o < b.m-1 && b.board[a.Y-o-1][a.X+o+1] == agentID {
-				countTRBL++
+			if !doneTR && a.Y-o > 0 && a.X+o < b.m-1 {
+				if b.board[a.Y-o-1][a.X+o+1] == agentID {
+					countTRBL++
+				}
 			} else {
 				doneTR = true
 			}
@@ -248,29 +246,37 @@ func (b *MNKBoard) EvaluateAction(agentID int, action Action) int {
 		}
 
 		// To bottom
-		if !doneB && col && a.Y+o < b.n-1 && b.board[a.Y+o+1][a.X] == agentID {
-			countCol++
+		if !doneB && col && a.Y+o < b.n-1 {
+			if b.board[a.Y+o+1][a.X] == agentID {
+				countCol++
+			}
 		} else {
 			doneB = true
 		}
 
 		// To top
-		if !doneT && col && a.Y-o > 0 && b.board[a.Y-o-1][a.X] == agentID {
-			countCol++
+		if !doneT && col && a.Y-o > 0 {
+			if b.board[a.Y-o-1][a.X] == agentID {
+				countCol++
+			}
 		} else {
 			doneT = true
 		}
 
 		// To right
-		if !doneR && row && a.X+o < b.m-1 && b.board[a.Y][a.X+o+1] == agentID {
-			countRow++
+		if !doneR && row && a.X+o < b.m-1 {
+			if b.board[a.Y][a.X+o+1] == agentID {
+				countRow++
+			}
 		} else {
 			doneR = true
 		}
 
 		// To left
-		if !doneL && row && a.X-o > 0 && b.board[a.Y][a.X-o-1] == agentID {
-			countRow++
+		if !doneL && row && a.X-o > 0 {
+			if b.board[a.Y][a.X-o-1] == agentID {
+				countRow++
+			}
 		} else {
 			doneL = true
 		}
