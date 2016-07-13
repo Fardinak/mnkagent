@@ -68,8 +68,8 @@ func (b *MNKBoard) Act(agentID int, action Action) (r float64, err error) {
 
 func (b *MNKBoard) Evaluate() int {
 	// Rows
-	for i, c := 0, 1; i < b.m; i, c = i+1, 1 {
-		for j := 0; j < b.n-1; j++ {
+	for i, c := 0, 1; i < b.n; i, c = i+1, 1 {
+		for j := 0; j < b.m-1; j++ {
 			if b.board[i][j] == b.board[i][j+1] {
 				c++
 				if c >= b.k && b.board[i][j] > 0 {
@@ -82,8 +82,8 @@ func (b *MNKBoard) Evaluate() int {
 	}
 
 	// Columns
-	for j, c := 0, 1; j < b.n; j, c = j+1, 1 {
-		for i := 0; i < b.m-1; i++ {
+	for j, c := 0, 1; j < b.m; j, c = j+1, 1 {
+		for i := 0; i < b.n-1; i++ {
 			if b.board[i][j] == b.board[i+1][j] {
 				c++
 				if c >= b.k && b.board[i][j] > 0 {
@@ -96,7 +96,7 @@ func (b *MNKBoard) Evaluate() int {
 	}
 
 	// TL-BR upper
-	for o, c := 0, 1; o <= b.n-b.k; o, c = o+1, 1 {
+	for o, c := 0, 1; o <= b.m-b.k; o, c = o+1, 1 {
 		for i := 0; i < b.m-o-1 && i < b.n-o-1; i++ {
 			if b.board[i][o+i] == b.board[i+1][o+i+1] {
 				c++
@@ -110,7 +110,7 @@ func (b *MNKBoard) Evaluate() int {
 	}
 
 	// TL-BR lower
-	for o, c := 1, 1; o <= b.m-b.k; o, c = o+1, 1 {
+	for o, c := 1, 1; o <= b.n-b.k; o, c = o+1, 1 {
 		for i := 0; i < b.m-o-1 && i < b.n-o-1; i++ {
 			if b.board[o+i][i] == b.board[o+i+1][i+1] {
 				c++
@@ -124,12 +124,12 @@ func (b *MNKBoard) Evaluate() int {
 	}
 
 	// TR-BL upper
-	for o, c := 0, 1; o <= b.n-b.k; o, c = o+1, 1 {
+	for o, c := 0, 1; o <= b.m-b.k; o, c = o+1, 1 {
 		for i := 0; i < b.m-o-1 && i < b.n-o-1; i++ {
-			if b.board[i][b.n-o-i-1] == b.board[i+1][b.n-o-i-2] {
+			if b.board[i][b.m-o-i-1] == b.board[i+1][b.m-o-i-2] {
 				c++
-				if c >= b.k && b.board[i][b.n-o-i-1] > 0 {
-					return b.board[i][b.n-o-i-1]
+				if c >= b.k && b.board[i][b.m-o-i-1] > 0 {
+					return b.board[i][b.m-o-i-1]
 				}
 			} else {
 				c = 1
@@ -138,12 +138,12 @@ func (b *MNKBoard) Evaluate() int {
 	}
 
 	// TR-BL lower
-	for o, c := 1, 1; o <= b.m-b.k; o, c = o+1, 1 {
+	for o, c := 1, 1; o <= b.n-b.k; o, c = o+1, 1 {
 		for i := 0; i < b.m-o-1 && i < b.n-o-1; i++ {
-			if b.board[i+o][b.n-i-1] == b.board[i+o+1][b.n-i-2] {
+			if b.board[i+o][b.m-i-1] == b.board[i+o+1][b.m-i-2] {
 				c++
-				if c >= b.k && b.board[i+o][b.n-i-1] > 0 {
-					return b.board[i+o][b.n-i-1]
+				if c >= b.k && b.board[i+o][b.m-i-1] > 0 {
+					return b.board[i+o][b.m-i-1]
 				}
 			} else {
 				c = 1
@@ -152,8 +152,8 @@ func (b *MNKBoard) Evaluate() int {
 	}
 
 	// Continuity check
-	for i := 0; i < b.m; i++ {
-		for j := 0; j < b.n; j++ {
+	for i := 0; i < b.n; i++ {
+		for j := 0; j < b.m; j++ {
 			if b.board[i][j] == 0 {
 				return 0
 			}
@@ -167,112 +167,85 @@ func (b *MNKBoard) Evaluate() int {
 func (b *MNKBoard) EvaluateAction(agentID int, action Action) int {
 	a := action.GetParams().(MNKAction)
 
-	var (
-		row      bool = b.k <= b.m
-		col      bool = b.k <= b.n
-		diagonal bool = row && col
-
-		doneT, doneB, doneL, doneR     bool
-		doneTL, doneTR, doneBL, doneBR bool
-		doneOrthogonal, doneDiagonal   bool = false, !diagonal
-
-		countRow, countCol, countTLBR, countTRBL int
-	)
-
-	// REVIEW: Benchmark agains multiple loops i.e. Evaluate()
-	for o := 0; !doneDiagonal || !doneOrthogonal; o++ {
-		if !doneDiagonal {
-			// To bottom-right
-			if !doneBR && a.Y+o < b.n-1 && a.X+o < b.m-1 {
-				if b.board[a.Y+o+1][a.X+o+1] == agentID {
-					countTLBR++
-				} // REVIEW: else if x > n - k && y > m - k { doneBR = true }
-			} else {
-				doneBR = true
-			}
-
-			// To top-left
-			if !doneTL && a.Y-o > 0 && a.X-o > 0 {
-				if b.board[a.Y-o-1][a.X-o-1] == agentID {
-					countTLBR++
-				}
-			} else {
-				doneTL = true
-			}
-
-			// To bottom-left
-			if !doneBL && a.Y+o < b.n-1 && a.X-o > 0 {
-				if b.board[a.Y+o+1][a.X-o-1] == agentID {
-					countTRBL++
-				}
-			} else {
-				doneBL = true
-			}
-
-			// To top-right
-			if !doneTR && a.Y-o > 0 && a.X+o < b.m-1 {
-				if b.board[a.Y-o-1][a.X+o+1] == agentID {
-					countTRBL++
-				}
-			} else {
-				doneTR = true
-			}
-
-			doneDiagonal = doneTL && doneTR && doneBL && doneBR
-
-			if countTLBR >= b.k-1 || countTRBL >= b.k-1 {
-				// Win
-				return 1
-			}
-		}
-
-		// To bottom
-		if !doneB && col && a.Y+o < b.n-1 {
-			if b.board[a.Y+o+1][a.X] == agentID {
-				countCol++
-			}
+	// Row
+	for i, c, d := 1, 1, 0; i < b.k && d < 6; i++ {
+		if a.X+i < b.m && b.board[a.Y][a.X+i] == agentID {
+			c++
 		} else {
-			doneB = true
+			d |= 2
 		}
 
-		// To top
-		if !doneT && col && a.Y-o > 0 {
-			if b.board[a.Y-o-1][a.X] == agentID {
-				countCol++
-			}
+		if a.X-i >= 0 && b.board[a.Y][a.X-i] == agentID {
+			c++
 		} else {
-			doneT = true
+			d |= 4
 		}
 
-		// To right
-		if !doneR && row && a.X+o < b.m-1 {
-			if b.board[a.Y][a.X+o+1] == agentID {
-				countRow++
-			}
+		if c >= b.k {
+			return 1
+		}
+	}
+
+	// Column
+	for i, c, d := 1, 1, 0; i < b.k && d < 6; i++ {
+		if a.Y+i < b.n && b.board[a.Y+i][a.X] == agentID {
+			c++
 		} else {
-			doneR = true
+			d |= 2
 		}
 
-		// To left
-		if !doneL && row && a.X-o > 0 {
-			if b.board[a.Y][a.X-o-1] == agentID {
-				countRow++
-			}
+		if a.Y-i >= 0 && b.board[a.Y-i][a.X] == agentID {
+			c++
 		} else {
-			doneL = true
+			d |= 4
 		}
 
-		doneOrthogonal = doneT && doneB && doneL && doneR
+		if c >= b.k {
+			return 1
+		}
+	}
 
-		if countRow >= b.k-1 || countCol >= b.k-1 {
-			// Win
+	// TL-BR
+	for i, c, d := 1, 1, 0; i < b.k && d < 6; i++ {
+		if a.X+i < b.m && a.Y+i < b.n && b.board[a.Y+i][a.X+i] == agentID {
+			c++
+		} else {
+			d |= 2
+		}
+
+		if a.X-i >= 0 && a.Y-i >= 0 && b.board[a.Y-i][a.X-i] == agentID {
+			c++
+		} else {
+			d |= 4
+		}
+
+		if c >= b.k {
+			return 1
+		}
+	}
+
+	// TR-BL
+	for i, c, d := 1, 1, 0; i < b.k && d < 6; i++ {
+		if a.X-i >= 0 && a.Y+i < b.n && b.board[a.Y+i][a.X-i] == agentID {
+			c++
+		} else {
+			d |= 2
+		}
+
+		if a.X+i < b.m && a.Y-i >= 0 && b.board[a.Y-i][a.X+i] == agentID {
+			c++
+		} else {
+			d |= 4
+		}
+
+		if c >= b.k {
 			return 1
 		}
 	}
 
 	// Continuity check
-	for i := 0; i < b.m; i++ {
-		for j := 0; j < b.n; j++ {
+	for i := 0; i < b.n; i++ {
+		for j := 0; j < b.m; j++ {
 			if b.board[i][j] == 0 {
 				return 0
 			}
