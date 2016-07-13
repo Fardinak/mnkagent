@@ -177,6 +177,17 @@ func (agent *RLAgent) lookup(state MNKState, action MNKAction) float64 {
 // value returns the reward for the given state
 func (agent *RLAgent) value(state MNKState, action MNKAction) float64 {
 	// TODO: Fix this. The agent must have real access to the evaluation function
+	if action != (MNKAction{-1, -1}) {
+		switch board.EvaluateAction(agent.id, action) {
+		case 1: // Agent won
+			return 1
+		case 0: // Game goes on
+			return 0
+		case -1: // Draw
+			return -0.5
+		}
+	}
+
 	switch board.Evaluate() {
 	case agent.id: // Agent won
 		return 1

@@ -73,16 +73,17 @@ func (b *MNKBoard) Act(agentID int, action Action) (r float64, err error) {
 	}
 
 	b.board[a.Y][a.X] = agentID
-	switch b.Evaluate() {
-	case agentID:
+	switch b.EvaluateAction(agentID, action) {
+	case 1: // Won
 		return 1, nil
-	case 0:
+	case 0: // Continue
 		return 0, nil
-	case -1:
+	case -1: // Draw
 		return -0.5, nil
-	default:
-		return -1, nil
 	}
+
+	// Never happens
+	return 0, nil
 }
 
 func (b *MNKBoard) Evaluate() int {
