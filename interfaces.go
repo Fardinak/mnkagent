@@ -2,12 +2,8 @@ package main
 
 // Environment interface
 type Environment interface {
-	// GetState returns the current state of the environment. It requires the
-	// agentID to provide POV
-	GetState(int) State
-
-	// GetWorld returns the complete current state of the environment (for god mode)
-	GetWorld() State
+	// GetState returns the current state of the environment
+	GetState() State
 
 	// GetPotentialActions returns an array of possible actions
 	GetPotentialActions(int) []Action

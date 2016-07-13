@@ -153,7 +153,7 @@ func (agent *RLAgent) learn(qMax float64) {
 		return
 	}
 
-	var mState = marshallState(agent.prev.state, agent.prev.action)
+	var mState = marshallState(agent.id, agent.prev.state, agent.prev.action)
 	var oldVal = agent.values[mState]
 
 	// REVIEW: Learning Rate may decrease gradually (for stochastic environments)
@@ -165,7 +165,7 @@ func (agent *RLAgent) learn(qMax float64) {
 
 // lookup returns the Q-value for the given state
 func (agent *RLAgent) lookup(state MNKState, action MNKAction) float64 {
-	var mState = marshallState(state, action) // Marshalled state
+	var mState = marshallState(agent.id, state, action) // Marshalled state
 	val, ok := agent.values[mState]
 	if !ok {
 		val = agent.value(state, action)
@@ -242,7 +242,7 @@ func (k *RLAgentKnowledge) loadFromFile(path string) bool {
 	return true
 }
 
-func marshallState(state MNKState, action MNKAction) (m string) {
+func marshallState(agentID int, state MNKState, action MNKAction) (m string) {
 	for i := range state {
 		for j := range state[i] {
 			// Include action in state
@@ -250,13 +250,14 @@ func marshallState(state MNKState, action MNKAction) (m string) {
 				m += "X"
 				continue
 			}
+
 			switch state[i][j] {
-			case 1:
-				m += "X"
-			case -1:
-				m += "O"
-			default:
+			case 0:
 				m += "-"
+			case agentID:
+				m += "X"
+			default:
+				m += "O"
 			}
 		}
 	}

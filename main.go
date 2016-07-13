@@ -293,7 +293,7 @@ func newRound(turn int, visual bool) int {
 
 	if visual {
 		// Draw a new board
-		display(board.GetWorld())
+		display(board.GetState())
 	}
 
 	// Who starts the game if not specified
@@ -304,7 +304,7 @@ func newRound(turn int, visual bool) int {
 	// Start the game
 	for {
 		action, err := players[turn].FetchMove(
-			board.GetState(turn),
+			board.GetState(),
 			board.GetPotentialActions(turn))
 		if err != nil {
 			panic(err)
@@ -321,7 +321,7 @@ func newRound(turn int, visual bool) int {
 					players[1].GetSign(), players[1].FetchMessage(),
 					players[2].GetSign(), players[2].FetchMessage())
 
-				display(board.GetWorld())
+				display(board.GetState())
 			}
 
 			var result = board.EvaluateAction(turn, action)
@@ -339,8 +339,8 @@ func newRound(turn int, visual bool) int {
 					fmt.Println("It's a DRAW!")
 				}
 
-				players[1].GameOver(board.GetState(1))
-				players[2].GameOver(board.GetState(2))
+				players[1].GameOver(board.GetState())
+				players[2].GameOver(board.GetState())
 				return 0
 
 			} else { // Current player won
@@ -349,8 +349,8 @@ func newRound(turn int, visual bool) int {
 						players[turn].GetSign())
 				}
 
-				players[1].GameOver(board.GetState(1))
-				players[2].GameOver(board.GetState(2))
+				players[1].GameOver(board.GetState())
+				players[2].GameOver(board.GetState())
 				return turn
 			}
 		}

@@ -24,27 +24,7 @@ func NewMNKBoard(m, n, k int) (b *MNKBoard, err error) {
 	return
 }
 
-func (b *MNKBoard) GetState(agentID int) State {
-	// TODO: Remove POV from GetState
-	var s MNKState = b.board.Clone()
-
-	// Create populate the board with 0: empty, 1: agent's, -1: rival's
-	for i := range s {
-		for j := range s[i] {
-			// Regulate based on given agent ID
-			if s[i][j] > 0 {
-				if s[i][j] == agentID {
-					s[i][j] = 1
-				} else {
-					s[i][j] = -1
-				}
-			}
-		}
-	}
-	return s
-}
-
-func (b *MNKBoard) GetWorld() State {
+func (b *MNKBoard) GetState() State {
 	return b.board.Clone()
 }
 

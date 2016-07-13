@@ -302,9 +302,9 @@ func TestEvaluate(t *testing.T) {
 
 		if r != a.expected {
 			t.Errorf("Evaluate(): Expected %d for state(%v), actual %d",
-				a.expected, b.GetWorld(), r)
+				a.expected, b.GetState(), r)
 		} else {
-			t.Logf("Evaluate(): As expected %d for state(%v)", r, b.GetWorld())
+			t.Logf("Evaluate(): As expected %d for state(%v)", r, b.GetState())
 		}
 	}
 }
@@ -319,10 +319,10 @@ func TestEvaluateAction(t *testing.T) {
 
 		if r != a.expected {
 			t.Errorf("EvaluateAction(%d %d): Expected %d for state(%v), "+
-				"actual %d", a.action[0], a.action[1], a.expected, b.GetWorld(), r)
+				"actual %d", a.action[0], a.action[1], a.expected, b.GetState(), r)
 		} else {
 			t.Logf("EvaluateAction(%d %d): As expected %d for state(%v)",
-				a.action[0], a.action[1], r, b.GetWorld())
+				a.action[0], a.action[1], r, b.GetState())
 		}
 	}
 }
