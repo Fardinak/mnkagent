@@ -179,7 +179,7 @@ func (b *MNKBoard) EvaluateAction(agentID int, action Action) int {
 		countRow, countCol, countTLBR, countTRBL int
 	)
 
-	// REVIEW: This is a horror show, isn't it? Really! We could just use multiple loops
+	// REVIEW: Benchmark agains multiple loops i.e. Evaluate()
 	for o := 0; !doneDiagonal || !doneOrthogonal; o++ {
 		if !doneDiagonal {
 			// To bottom-right
