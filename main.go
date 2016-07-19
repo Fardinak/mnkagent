@@ -463,7 +463,7 @@ func printStats(log []int, rmd bool) {
 
 	if rmd {
 		fmt.Println("Random move dispersion:")
-		for i := 0; i < 9; i++ {
+		for i := 0; i < len(rlKnowledge.randomDispersion); i++ {
 			fmt.Printf("%d: %d\n", i+1, rlKnowledge.randomDispersion[i])
 		}
 	}
