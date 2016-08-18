@@ -274,7 +274,31 @@ func (s MNKState) Clone() (sp MNKState) {
 	return
 }
 
+func (s MNKState) GetBuckets() []MNKBucket {
+	// TODO: Use code from AnalyzeMNKState
+	// TODO: Create a bucket cache and define a trigger to add new moves
+	return []MNKBucket{}
+}
+
+func (s MNKState) FindNonEmptyPositions() []Position2D {
+	// TODO: Use code from FindNonEmptyPosition
+	return []Position2D{}
+}
+
+func (s MNKState) EvaluateBucket(bucket MNKBucket) float64 {
+	// TODO: Use code from MNKBoard.Evaluate
+	return 0
+}
+
+func (s MNKState) EvaluateAction(action MNKAction) float64 {
+	// TODO: Create a mini-state around `action` with a radious of `k` then (m = n = k*2 - 1)
+	// then use .GetBuckets and do .EvaluateBucket over them.
+	// Remember to use the bucket cache to provide meaningful reward
+	return 0
+}
+
 type MNKAction struct {
+	// TODO: Use Position2D in here
 	Y, X int
 }
 
