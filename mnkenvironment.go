@@ -1,6 +1,9 @@
 package main
 
-import "errors"
+import (
+	"errors"
+	"math"
+)
 
 type MNKBoard struct {
 	m, n, k int
@@ -274,27 +277,184 @@ func (s MNKState) Clone() (sp MNKState) {
 	return
 }
 
-func (s MNKState) GetBuckets() []MNKBucket {
-	// TODO: Use code from AnalyzeMNKState
+func (s MNKState) GetMN() (int, int) {
+	return len(s[0]), len(s)
+}
+
+func (s MNKState) GetBucket(pos Position2D, dir Direction) (b MNKBucket, err error) {
+	// Step coefficients based on direction
+	i, j := dir.GetCoefficients()
+
+	for o := 0; o < k; o++ {
+		b.bucket = append(b.bucket, s[pos.Y+o*j][pos.X+o*i])
+	}
+
+	return
+}
+
+func (s MNKState) GetAllBuckets() (bs []MNKBucket) {
+	if len(s) == 0 {
+		return
+	}
+
+	for pos, err := s.NextNonEmptyPosition(0, 0); err == nil; pos, err = s.NextNonEmptyPosition(pos.X, pos.Y) {
+		// If need be, possible to automate like so:
+		// var directions = []Direction{DIRECTION_E, DIRECTION_S, DIRECTION_SE, DIRECTION_SW}
+		// for dir := range directions {
+		//	var i, j = dir.GetCoefficients()
+		//	if pos.X+k*i+1 >= 0 && pos.X+k*i <= m && pos.Y+k*j+1 >= 0 && pos.Y+k*j <= n {
+		//		b, _ := s.GetBucket(pos, dir)
+		//		bs = append(bs, b)
+		//	}
+		// }
+
+		if pos.X+k <= m {
+			b, _ := s.GetBucket(pos, DIRECTION_E)
+			bs = append(bs, b)
+		}
+
+		if pos.Y+k <= n {
+			b, _ := s.GetBucket(pos, DIRECTION_S)
+			bs = append(bs, b)
+		}
+
+		if pos.X+k <= m && pos.Y+k <= n {
+			b, _ := s.GetBucket(pos, DIRECTION_SE)
+			bs = append(bs, b)
+		}
+
+		if pos.X-k+1 >= 0 && pos.Y+k <= n {
+			b, _ := s.GetBucket(pos, DIRECTION_SW)
+			bs = append(bs, b)
+		}
+	}
+
 	// TODO: Create a bucket cache and define a trigger to add new moves
-	return []MNKBucket{}
+	return
 }
 
-func (s MNKState) FindNonEmptyPositions() []Position2D {
-	// TODO: Use code from FindNonEmptyPosition
-	return []Position2D{}
-}
+func (s MNKState) NextNonEmptyPosition(offsetX, offsetY int) (Position2D, error) {
+	m, n := s.GetMN()
 
-func (s MNKState) EvaluateBucket(bucket MNKBucket) float64 {
-	// TODO: Use code from MNKBoard.Evaluate
-	return 0
+	for i := offsetY; i < n; i++ {
+		j := 0
+		if i == offsetY && offsetX != 0 {
+			// Don't get trapped on one cell
+			j = offsetX + 1
+		}
+		for ; j < m; j++ {
+			if s[i][j] > 0 {
+				return Position2D{j, i}, nil
+			}
+		}
+	}
+
+	return Position2D{}, errors.New("environment: no more empty positions available")
 }
 
 func (s MNKState) EvaluateAction(action MNKAction) float64 {
-	// TODO: Create a mini-state around `action` with a radious of `k` then (m = n = k*2 - 1)
-	// then use .GetBuckets and do .EvaluateBucket over them.
+	// TODO: Get Relevant Buckets and calculate action's relative position in each
 	// Remember to use the bucket cache to provide meaningful reward
 	return 0
+}
+
+type MNKBucket struct {
+	bucket    []int
+	Position  Position2D
+	Direction Direction
+}
+
+func (b MNKBucket) Evaluate() (p MNKBucketScore) {
+	var k = len(b.bucket)
+	var count = [3]float64{}
+
+	for i := 0; i < k; i++ {
+		count[b.bucket[i]]++
+	}
+
+	p.XScore = count[1] / float64(k)
+	p.OScore = count[2] / float64(k)
+
+	if p.OScore > 0 {
+		p.XScore = 0
+	}
+	if p.XScore > 0 {
+		p.OScore = 0
+	}
+
+	return
+}
+
+func (b MNKBucket) EvaluateAction(agentID, action int) (MNKBucketScore, error) {
+	if action < 0 || action >= len(b.bucket) {
+		return MNKBucketScore{}, errors.New("environment: action not in range")
+	}
+	// Clone Bucket
+	var bucket = MNKBucket{}
+	copy(bucket.bucket, b.bucket)
+
+	// Evaluate state+action bucket
+	b.bucket[action] = agentID
+	return b.Evaluate(), nil
+}
+
+func (b MNKBucket) EvaluateRelativeAction(agentID int, action Action) (MNKBucketScore, error) {
+	act := action.GetParams().(MNKAction)
+	pos := b.Position
+	i, j := b.Direction.GetCoefficients()
+
+	// Validate action
+	var (
+		X0, Y0 = pos.X, pos.Y
+		X1, Y1 = pos.X + k*i, pos.Y + k*j
+
+		dxa = act.X - X0
+		dya = act.Y - Y0
+
+		dxl = X1 - X0
+		dyl = Y1 - Y0
+
+		// Gradient check
+		cross = dxa*dyl - dya*dxl
+		err   = cross != 0
+	)
+
+	// Range check
+	if math.Abs(float64(dxl)) >= math.Abs(float64(dyl)) {
+		if dxl > 0 {
+			if X0 > act.X || act.X > X1 {
+				err = true
+			}
+		} else {
+			if X1 > act.X || act.X > X0 {
+				err = true
+			}
+		}
+	} else {
+		if dyl > 0 {
+			if Y0 > act.Y || act.Y > Y1 {
+				err = true
+			}
+		} else {
+			if Y1 > act.Y || act.Y > Y0 {
+				err = true
+			}
+		}
+	}
+
+	if err {
+		return MNKBucketScore{}, errors.New("environment: action not in range")
+	}
+
+	// Calculate relative action position
+	a := int(math.Max(math.Abs(float64(pos.X-act.X)), math.Abs(float64(pos.Y-act.Y))))
+
+	return b.EvaluateAction(agentID, a)
+}
+
+type MNKBucketScore struct {
+	XScore float64
+	OScore float64
 }
 
 type MNKAction struct {
@@ -305,3 +465,50 @@ type MNKAction struct {
 func (a MNKAction) GetParams() interface{} {
 	return a
 }
+
+type Direction int
+
+const (
+	DIRECTION_N = iota
+	DIRECTION_NE
+	DIRECTION_E
+	DIRECTION_SE
+	DIRECTION_S
+	DIRECTION_SW
+	DIRECTION_W
+	DIRECTION_NW
+)
+
+func (d Direction) GetCoefficients() (i, j int) {
+	switch d {
+	case DIRECTION_N:
+		return 0, -1
+	case DIRECTION_NE:
+		return 1, -1
+	case DIRECTION_E:
+		return 1, 0
+	case DIRECTION_SE:
+		return 1, 1
+	case DIRECTION_S:
+		return 0, 1
+	case DIRECTION_SW:
+		return -1, 1
+	case DIRECTION_W:
+		return -1, 0
+	case DIRECTION_NW:
+		return -1, -1
+	}
+	return
+}
+
+type Position2D struct {
+	X, Y int
+}
+
+type MNKProbability struct {
+	State       []int
+	Position    Position2D
+	XLikelyhood float64
+	OLikelyhood float64
+}
+type MNKProbabilitySet []MNKProbability

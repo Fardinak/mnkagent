@@ -1,5 +1,7 @@
 package main
 
+// FIXME: Move to mnkenvironment_test.go and fix up
+
 import "testing"
 
 var testBoard = MNKState{
