@@ -37,8 +37,8 @@ func main() {
 	// Initialize random seed
 	rand.Seed(time.Now().UTC().UnixNano())
 
-	// Create game board
-	board, err := game.NewMNKBoard(cfg.Game.M, cfg.Game.N, cfg.Game.K)
+	// Create game board with optimal implementation
+	board, err := game.CreateBoard(game.Auto, cfg.Game.M, cfg.Game.N, cfg.Game.K)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -148,7 +148,7 @@ func main() {
 }
 
 // train runs the training process for the specified number of rounds
-func train(cfg *config.Config, board *game.MNKBoard, agents map[int]common.Agent, display *ui.Display, knowledge *agents.RLAgentKnowledge, terminateFlag *bool) []int {
+func train(cfg *config.Config, board common.Environment, agents map[int]common.Agent, display *ui.Display, knowledge *agents.RLAgentKnowledge, terminateFlag *bool) []int {
 	log := make([]int, 3)
 	fmt.Println("Commencing training...")
 
@@ -229,7 +229,7 @@ func train(cfg *config.Config, board *game.MNKBoard, agents map[int]common.Agent
 }
 
 // play starts a game between a human and the RL agent
-func play(cfg *config.Config, board *game.MNKBoard, agents map[int]common.Agent, display *ui.Display, knowledge *agents.RLAgentKnowledge) []int {
+func play(cfg *config.Config, board common.Environment, agents map[int]common.Agent, display *ui.Display, knowledge *agents.RLAgentKnowledge) []int {
 	log := make([]int, 3)
 
 	// Verify model file is accessible if learning is enabled
@@ -278,7 +278,7 @@ func play(cfg *config.Config, board *game.MNKBoard, agents map[int]common.Agent,
 }
 
 // newRound starts a new game round
-func newRound(board *game.MNKBoard, agents map[int]common.Agent, display *ui.Display, turn int, visual bool) int {
+func newRound(board common.Environment, agents map[int]common.Agent, display *ui.Display, turn int, visual bool) int {
 	// Reset the board
 	board.Reset()
 	
