@@ -2,99 +2,60 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"math/rand"
 	"os"
-	"os/exec"
 	"os/signal"
 	"time"
+
+	"mnkagent/agents"
+	"mnkagent/common"
+	"mnkagent/config"
+	"mnkagent/game"
+	"mnkagent/ui"
 )
 
-// Flags
-var (
-	// Game flags
-	m         int
-	n         int
-	k         int
-	noDisplay bool
-	gomoku    bool
-
-	// RL flags
-	rlModelFile       string
-	rlModelStatusMode bool
-	rlNoLearn         bool
-	rlTrainingMode    uint
-)
-
-// Signal channel
-var sigint chan os.Signal
-
-// Signs
+// Signs for players
 const (
 	X = "\033[36;1mX\033[0m"
 	O = "\033[31;1mO\033[0m"
 )
 
-var players = [3]Agent{
-	nil, // No one
-	NewHumanAgent(1, X),
-	NewRLAgent(2, O, m, n, k, !rlNoLearn),
-}
-var rounds int
-var board *MNKBoard
-var flags = make(map[string]bool)
-
-func init() {
-	// Game flags
-	flag.IntVar(&m, "m", 3, "Board dimention across the horizontal (x) axis")
-	flag.IntVar(&n, "n", 3, "Board dimention across the vertical (y) axis")
-	flag.IntVar(&k, "k", 3, "Number of marks in a row")
-	flag.BoolVar(&noDisplay, "no-display", false, "Do now show board and "+
-		"stats in training mode")
-	flag.BoolVar(&gomoku, "gomoku", false, "Shortcut for a 19,19,5 game (overrides m, n and k)")
-
-	// RL flags
-	flag.StringVar(&rlModelFile, "rl-model", "rl.kw", "RL trained model file "+
-		"location")
-	flag.BoolVar(&rlModelStatusMode, "rl-model-status", false, "RL trained "+
-		"model status")
-	flag.BoolVar(&rlNoLearn, "rl-no-learn", false, "Turn off learning for RL "+
-		"in normal mode and don't save model to disk")
-	flag.UintVar(&rlTrainingMode, "rl-train", 0, "Train RL for n iterations")
-
-	flag.Parse()
-}
-
 func main() {
 	fmt.Println("MNK Agent v2")
 
-	if gomoku {
-		m = 19
-		n = 19
-		k = 5
-	}
+	// Load configuration
+	cfg := config.LoadFromArgs()
 
-	var err error
-	board, err = NewMNKBoard(m, n, k)
+	// Initialize random seed
+	rand.Seed(time.Now().UTC().UnixNano())
+
+	// Create game board
+	board, err := game.NewMNKBoard(cfg.Game.M, cfg.Game.N, cfg.Game.K)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	rand.Seed(time.Now().UTC().UnixNano())
-	readKnowledgeOK := rlKnowledge.loadFromFile(rlModelFile)
+	// Initialize RL knowledge
+	rlKnowledge := &agents.RLAgentKnowledge{}
+	readKnowledgeOK, err := rlKnowledge.LoadFromFile(cfg.RL.ModelFile)
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Printf("Warning: Could not load RL model: %v\n", err)
+	}
 
-	if rlModelStatusMode {
+	// If model status mode is enabled, show stats and exit
+	if cfg.RL.ModelStatusMode {
 		if !readKnowledgeOK {
+			fmt.Println("No readable model file found")
 			return
 		}
 
 		fmt.Println("Reinforcement learning model report")
 		fmt.Printf("Iterations: %d\n", rlKnowledge.Iterations)
 		fmt.Printf("Learned states: %d\n", len(rlKnowledge.Values))
-		var max float64 = 0
-		var min float64 = 0
+		
+		var max, min float64
 		for _, v := range rlKnowledge.Values {
 			if v > max {
 				max = v
@@ -102,463 +63,281 @@ func main() {
 				min = v
 			}
 		}
+		
 		fmt.Printf("Maximum value: %f\n", max)
 		fmt.Printf("Minimum value: %f\n", min)
 		return
 	}
 
-	if rlTrainingMode > 0 {
-		// Register SIGINT handler
-		sigint = make(chan os.Signal, 1)
+	// Create agent map
+	agentMap := make(map[int]common.Agent)
+	agentMap[0] = nil // No one (used for empty spaces)
+
+	// Create display handler
+	display := ui.NewDisplay(ui.DisplayConfig{
+		NoDisplay: cfg.Game.NoDisplay,
+		M:         cfg.Game.M,
+		N:         cfg.Game.N,
+		FirstRun:  true,
+	}, map[int]string{
+		1: X,
+		2: O,
+	})
+
+	// Setup for training mode
+	if cfg.RL.TrainingMode > 0 {
+		// Register SIGINT handler for clean termination
+		sigint := make(chan os.Signal, 1)
 		signal.Notify(sigint, os.Interrupt)
-		go func(c <-chan os.Signal) {
-			<-c
-			flags["terminate"] = true
+		terminateFlag := false
+		
+		go func() {
+			<-sigint
+			terminateFlag = true
 			signal.Reset(os.Interrupt)
-		}(sigint)
+		}()
 		defer close(sigint)
 
-		// Start training loop
-		log := train(rlTrainingMode)
-		printStats(log, true)
+		// Setup RL agents for training
+		p1 := agents.NewRLAgent(1, X, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, true)
+		p1.LearningRate = 0.2
+		p1.DiscountFactor = 0.8
+		p1.ExplorationFactor = 0.25
+		
+		p2 := agents.NewRLAgent(2, O, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, true)
+		p2.LearningRate = 0.2
+		p2.DiscountFactor = 0.8
+		p2.ExplorationFactor = 0.25
+
+		agentMap[1] = p1
+		agentMap[2] = p2
+
+		// Start training
+		log := train(cfg, board, agentMap, display, rlKnowledge, &terminateFlag)
+		display.ShowStats(log, agentMap, true, rlKnowledge.RandomDispersion)
 		return
 	}
 
+	// Setup for normal play mode
+	agentMap[1] = agents.NewHumanAgent(1, X, cfg.Game.M, cfg.Game.N)
+	agentMap[2] = agents.NewRLAgent(2, O, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, !cfg.RL.NoLearn)
+
+	// Ask for number of rounds
 	fmt.Printf("? > How many rounds shall we play? ")
-	_, err = fmt.Scanln(&rounds)
+	_, err = fmt.Scanln(&cfg.Game.Rounds)
 	if err != nil {
-		fmt.Println("\n[error] Shit happened!")
-		panic(err)
+		fmt.Println("\n[error] Invalid input!")
+		return
 	}
 	fmt.Println("Great! Have fun.")
 
-	log := play(rounds)
-	printStats(log, false)
+	// Start the game
+	log := play(cfg, board, agentMap, display, rlKnowledge)
+	display.ShowStats(log, agentMap, false, nil)
 }
 
-// train initiates training for given rounds
-func train(rounds uint) (log []int) {
-	log = make([]int, 3)
-
+// train runs the training process for the specified number of rounds
+func train(cfg *config.Config, board *game.MNKBoard, agents map[int]common.Agent, display *ui.Display, knowledge *agents.RLAgentKnowledge, terminateFlag *bool) []int {
+	log := make([]int, 3)
 	fmt.Println("Commencing training...")
 
-	if err := fileAccessible(rlModelFile); err != nil {
-		fmt.Println("Model file not accessible")
-		fmt.Println(err)
-		return
+	// Verify model file is accessible
+	file, err := os.OpenFile(cfg.RL.ModelFile, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		fmt.Printf("Model file not accessible: %v\n", err)
+		return log
 	}
+	file.Close()
 
-	p1 := NewRLAgent(1, X, m, n, k, true)
-	p1.LearningRate = 0.2       // Default: 0.2
-	p1.DiscountFactor = 0.8     // Default: 0.8
-	p1.ExplorationFactor = 0.25 // Default: 0.25
-	p2 := NewRLAgent(2, O, m, n, k, true)
-	p2.LearningRate = 0.2       // Default: 0.2
-	p2.DiscountFactor = 0.8     // Default: 0.8
-	p2.ExplorationFactor = 0.25 // Default: 0.25
+	// Game state tracking
+	var turn int = 1
+	var progress int
+	termW, _ := ui.GetTerminalSize()
 
-	players[1] = p1
-	players[2] = p2
-
-	var (
-		// For the game
-		c    uint
-		turn int
-
-		// For the progress bar
-		termW         int
-		cleanupLine   string
-		displayH      int = n*2 + 3
-		displayBottom string
-		displayTop    string
-		progress      int
-		progressbar   string
-		color         string = "\033[41;3m"
-		colorDone     string = "\033[46;3m"
-	)
-
-	for i := 0; i <= displayH; i++ {
-		displayBottom += "\n"
-		displayTop += "\033[F"
-	}
-
-	for c, turn = 1, 1; c <= rounds; c++ {
-		pTick := c*100%rounds == 0
+	// Training loop
+	for c := uint(1); c <= cfg.RL.TrainingMode; c++ {
+		// Update progress bar on percentage changes or first iteration
+		pTick := c*100%cfg.RL.TrainingMode == 0
 		if pTick || c == 1 {
-			// Get terminal width
-			termW, _ = getTermSize()
+			// Refresh terminal width
+			termW, _ = ui.GetTerminalSize()
+			
+			// Track progress percentage
+			progress = int(c * 100 / cfg.RL.TrainingMode)
+			
+			// Display progress bar
+			display.ClearPrompt()
+			display.ShowProgressBar(progress, termW, "Training...", false)
+		}
 
-			// Generate cleanup line for terminal width
-			cleanupLine = ""
-			for i := 0; i < termW; i++ {
-				cleanupLine += " "
+		// Start a new round and get the winner's ID
+		prevTurn := turn
+		turn = newRound(board, agents, display, turn, !cfg.Game.NoDisplay)
+		log[turn]++ // Update score
+		
+		// If it was a draw, next player starts
+		if turn == 0 {
+			turn = getNextPlayer(prevTurn, len(agents)-1)
+		}
+
+		if !cfg.Game.NoDisplay {
+			display.ShowSeparator()
+		}
+
+		// Check for termination signal
+		if *terminateFlag {
+			display.ShowProgressBar(progress, termW, "Terminated.", false)
+			fmt.Println() // Add newline after progress bar
+			
+			// Save the model
+			if !cfg.RL.NoLearn {
+				knowledge.SaveToFile(cfg.RL.ModelFile)
 			}
-			cleanupLine += "\r"
-
-			// Track progress
-			progress = int(c * 100 / rounds)
-			progressbar = generateProgressBar(progress, termW, color, "Training...")
+			return log
 		}
 
-		if pTick || !noDisplay {
-			// Clear the progress bar
-			fmt.Print(cleanupLine)
-		}
-
-		// Start a new round and get the winner's id
-		pTurn := turn
-		turn = newRound(turn, !noDisplay) // Previous round's winner starts the game
-		log[turn]++                       // Keep scores
-		if turn == 0 {                    // If it was a draw, next player starts the game
-			turn = getNextPlayer(pTurn)
-		}
-
-		if !noDisplay {
-			// Print separator and cleanup progress bar
-			fmt.Printf("___________________________________\n%s\n", cleanupLine)
-		}
-
-		if flags["terminate"] {
-			fmt.Print("\r", generateProgressBar(progress, termW, color, "Terminated."), "\n")
-			if !rlNoLearn {
-				rlKnowledge.saveToFile(rlModelFile)
-			}
-			return
-		}
-
-		if pTick || !noDisplay {
-			if !noDisplay && c != rounds {
-				// If not 100%, leave room for next board display
-				fmt.Print(displayBottom)
-			}
-
-			// Print progress bar
-			fmt.Print(progressbar)
-
-			if !noDisplay && c != rounds {
-				// If not 100%, go to display 0x0
-				fmt.Print(displayTop)
-			}
-		}
-
-		if !rlNoLearn && pTick {
-			// Store knowledge every 1/100 of rounds
-			rlKnowledge.saveToFile(rlModelFile)
+		// Periodically save the model
+		if !cfg.RL.NoLearn && pTick {
+			knowledge.SaveToFile(cfg.RL.ModelFile)
 		}
 	}
 
-	// Progress bar final touch
-	fmt.Print(generateProgressBar(100, termW, colorDone, "Training completed"), "\n")
+	// Final progress bar
+	display.ShowProgressBar(100, termW, "Training completed", true)
+	fmt.Println() // Add newline after progress bar
 
-	return
+	return log
 }
 
-// play initiates game between Human Agent and RL Agent for given rounds
-func play(rounds int) (log []int) {
-	log = make([]int, 3)
+// play starts a game between a human and the RL agent
+func play(cfg *config.Config, board *game.MNKBoard, agents map[int]common.Agent, display *ui.Display, knowledge *agents.RLAgentKnowledge) []int {
+	log := make([]int, 3)
 
-	if err := fileAccessible(rlModelFile); err != nil {
-		fmt.Println("Model file not accessible")
-		fmt.Println(err)
+	// Verify model file is accessible if learning is enabled
+	if !cfg.RL.NoLearn {
+		file, err := os.OpenFile(cfg.RL.ModelFile, os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			fmt.Printf("Model file not accessible: %v\n", err)
+		}
+		file.Close()
 	}
 
-	players[1] = NewHumanAgent(1, X)
-	players[2] = NewRLAgent(2, O, m, n, k, !rlNoLearn)
-
-	for c, turn := 1, 1; c <= rounds; c++ {
-		// Start a new round and get the winner's id
-		pTurn := turn
-		turn = newRound(turn, true) // Previous round's winner starts the game
-		log[turn]++                 // Keep scores
-		if turn == 0 {              // If it was a draw, next player starts the game
-			turn = getNextPlayer(pTurn)
+	// Game loop
+	turn := 1
+	for c := 1; c <= cfg.Game.Rounds; c++ {
+		// Start a new round and get the winner's ID
+		prevTurn := turn
+		turn = newRound(board, agents, display, turn, true)
+		log[turn]++ // Update score
+		
+		// If it was a draw, next player starts
+		if turn == 0 {
+			turn = getNextPlayer(prevTurn, len(agents)-1)
 		}
 
-		fmt.Print("___________________________________\n\n")
+		display.ShowSeparator()
 
-		if !rlNoLearn {
-			rlKnowledge.saveToFile(rlModelFile)
+		// Save the model after each round if learning is enabled
+		if !cfg.RL.NoLearn {
+			// Save model directly using the knowledge instance
+			knowledge.SaveToFile(cfg.RL.ModelFile)
 		}
 	}
-	return
+
+	return log
 }
 
-// newRound starts a new round
-func newRound(turn int, visual bool) int {
-	// Reset board
+// newRound starts a new game round
+func newRound(board *game.MNKBoard, agents map[int]common.Agent, display *ui.Display, turn int, visual bool) int {
+	// Reset the board
 	board.Reset()
-
-	// Set runtime flags
-	flags["first_run"] = true
-
+	
+	// Reset display
+	display.ResetFirstRun()
+	
+	// Draw the initial board
 	if visual {
-		// Draw a new board
-		display(board.GetState())
+		display.ShowBoard(board.GetState())
 	}
 
-	// Who starts the game if not specified
+	// Set starting player if not specified
 	if turn == 0 {
 		turn = 1
 	}
 
-	// Start the game
+	// Game loop
 	for {
-		action, err := players[turn].FetchMove(
-			board.GetState(),
-			board.GetPotentialActions(turn))
+		// Get current player's move
+		possibleActions := board.GetPotentialActions(turn)
+		action, err := agents[turn].FetchMove(board.GetState(), possibleActions)
 		if err != nil {
-			panic(err)
+			fmt.Printf("Error getting move from agent %d: %v\n", turn, err)
+			continue
 		}
 
+		// Execute the move
 		_, err = board.Act(turn, action)
 		if err != nil {
-			// Clear prompt
-			fmt.Print("\033[2K\r", err)
-		} else {
+			// Show error and try again
+			display.ClearPrompt()
+			fmt.Print(err)
+			continue
+		}
+
+		// Update display
+		if visual {
+			display.ShowMessages([]common.Agent{agents[1], agents[2]})
+			display.ShowBoard(board.GetState())
+		}
+
+		// Check game state
+		result := board.EvaluateAction(turn, action)
+
+		// Clear prompt if game ended
+		if visual && result != 0 {
+			display.ClearPrompt()
+		}
+
+		// Handle game outcome
+		if result == 0 {
+			// Game continues
+			turn = getNextPlayer(turn, len(agents)-1)
+		} else if result == -1 {
+			// Draw
 			if visual {
-				// Clear previous messages
-				fmt.Printf("\033[2K\rAgent %s: %s / Agent %s: %s",
-					players[1].GetSign(), players[1].FetchMessage(),
-					players[2].GetSign(), players[2].FetchMessage())
-
-				display(board.GetState())
+				fmt.Println("It's a DRAW!")
 			}
 
-			var result = board.EvaluateAction(turn, action)
-
-			if visual && result != 0 { // Game ended
-				// Clear prompt
-				fmt.Print("\033[2K\n\033[2K\r")
-			}
-
-			if result == 0 { // The game goes on
-				turn = getNextPlayer(turn)
-
-			} else if result == -1 { // Draw
-				if visual {
-					fmt.Println("It's a DRAW!")
-				}
-
-				players[1].GameOver(board.GetState())
-				players[2].GameOver(board.GetState())
-				return 0
-
-			} else { // Current player won
-				if visual {
-					fmt.Printf("We have a WINNER! Congratulations %s\n",
-						players[turn].GetSign())
-				}
-
-				players[1].GameOver(board.GetState())
-				players[2].GameOver(board.GetState())
-				return turn
-			}
-		}
-	}
-}
-
-// display draws the board on the terminal
-func display(board State) {
-	var b MNKState = board.(MNKState)
-	var mark string
-
-	if flags["first_run"] {
-		flags["first_run"] = false
-	} else {
-		// Reset to app's 0x0 position
-		reset := "\r"
-		for i := 0; i < n*2+1; i++ {
-			reset += "\033[F"
-		}
-		fmt.Print(reset)
-	}
-
-	for i := 0; i < n; i++ {
-		line := ""
-		if i == 0 {
-			// Top
-			line = "\u2554"
-			for j := 0; j < m; j++ {
-				line += "\u2550\u2550\u2550\u2550\u2550"
-				if j < m-1 {
-					line += "\u2564"
-				} else {
-					line += "\u2557"
+			// Notify agents of game end
+			for id, agent := range agents {
+				if id > 0 && agent != nil {
+					agent.GameOver(board.GetState())
 				}
 			}
+			
+			return 0
 		} else {
-			// Middle
-			line = "\u2551"
-			for j := 0; j < m; j++ {
-				line += "\u2500\u2500\u2500\u2500\u2500"
-				if j < m-1 {
-					line += "\u253c"
-				} else {
-					line += "\u2551"
+			// Current player won
+			if visual {
+				fmt.Printf("We have a WINNER! Congratulations %s\n", agents[turn].GetSign())
+			}
+
+			// Notify agents of game end
+			for id, agent := range agents {
+				if id > 0 && agent != nil {
+					agent.GameOver(board.GetState())
 				}
 			}
-		}
-		fmt.Println(line)
-
-		line = "\u2551"
-		for j := 0; j < m; j++ {
-			if j != 0 {
-				line += "\u2502"
-			}
-
-			index := i*m + j + 1
-			padding := [2]string{"", ""}
-
-			if b[i][j] == 0 {
-				mark = fmt.Sprintf("\033[37m%d\033[0m", index)
-
-				if index < 10 {
-					padding = [2]string{"  ", "  "}
-				} else if index < 100 {
-					padding = [2]string{" ", "  "}
-				} else if index < 1000 {
-					padding = [2]string{" ", " "}
-				}
-
-			} else {
-				mark = players[b[i][j]].GetSign()
-				padding = [2]string{"  ", "  "}
-			}
-
-			line += padding[0]
-			line += mark
-			line += padding[1]
-		}
-		line += "\u2551"
-		fmt.Println(line)
-
-		if i+1 == len(b) {
-			// Bottom
-			line = "\u255a"
-			for j := 0; j < m; j++ {
-				line += "\u2550\u2550\u2550\u2550\u2550"
-				if j < m-1 {
-					line += "\u2567"
-				} else {
-					line += "\u255d"
-				}
-			}
-			fmt.Println(line)
+			
+			return turn
 		}
 	}
 }
 
-// printStats prints out statistics of given game log
-func printStats(log []int, rmd bool) {
-	var winnerSign string
-	winner := max(log)
-	if winner == 0 {
-		winnerSign = "DRAW"
-	} else {
-		winnerSign = players[winner].GetSign()
-	}
-	fmt.Printf("Stats: %s/%s/Draw = %d/%d/%d\nOverall winner: %s\n",
-		players[1].GetSign(), players[2].GetSign(), log[1], log[2], log[0],
-		winnerSign)
-
-	if rmd {
-		fmt.Println("Random move dispersion:")
-		for i := 0; i < len(rlKnowledge.randomDispersion); i++ {
-			fmt.Printf("%d: %d\n", i+1, rlKnowledge.randomDispersion[i])
-		}
-	}
-}
-
-// getNextPlayer returns the next player's id
-func getNextPlayer(current int) int {
-	if current < len(players)-1 {
+// getNextPlayer returns the ID of the next player
+func getNextPlayer(current, maxPlayers int) int {
+	if current < maxPlayers {
 		return current + 1
 	}
 	return 1
-}
-
-// Get the key of the maximum array item
-func max(arr []int) (key int) {
-	var max int
-	for i := range arr {
-		if arr[i] > max {
-			max = arr[i]
-			key = i
-		}
-	}
-	return
-}
-
-// fileAccessible returns true if given path is writable
-func fileAccessible(path string) (err error) {
-	var f *os.File
-	f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
-	defer f.Close()
-	return
-}
-
-// Get terminal size
-func getTermSize() (w int, h int) {
-	// TODO: Use a terminal ui library like termbox-go
-	cmd := exec.Command("stty", "size")
-	cmd.Stdin = os.Stdin
-	d, _ := cmd.Output()
-	fmt.Sscan(string(d), &h, &w)
-	return
-}
-
-// generateProgressBar constructs a progress bar with given information
-func generateProgressBar(progress, width int, color string, msg string) string {
-	var reset = []byte("\033[0m")
-	var ellipsis = []byte("...")
-	var fProgress = fmt.Sprintf("%d%%", progress)
-	var pb = make([]byte, width, 2*width+20)
-	var m = make([]byte, len(msg), len(msg)+len(ellipsis))
-	var p = make([]byte, len(fProgress))
-
-	// Generate progress indicator string
-	copy(p, fProgress)
-
-	// Truncate message if necessary
-	// TODO: Either escape special commands like color, or take care not to truncate them
-	copy(m, msg)
-	if len(m) > width-8 {
-		m = m[:width-5-len(ellipsis)]
-		copy(m[len(m)-len(ellipsis):], ellipsis)
-	}
-
-	// Fill buffer with empty space
-	for i := 0; i < width; i++ {
-		copy(pb[i:], " ")
-	}
-
-	// Progress indicator position
-	pIndex := width*progress/100 + len(color)
-	// Message position
-	mOffset := (width-8)/2 - len(m)/2
-	if mOffset < 1 {
-		mOffset = 1
-	}
-
-	// Buffer message
-	copy(pb[mOffset:], m)
-
-	// Buffer progress indicator
-	copy(pb[len(pb)-len(p)-1:], p)
-
-	// Extend buffer to support color, reset and BOL
-	pb = pb[0 : len(pb)+len(color)+len(reset)+len("\r")]
-
-	// Add progress color
-	copy(pb[len(color):], pb[:])
-	copy(pb[:len(color)], color)
-
-	// Reset progress color
-	copy(pb[pIndex+len(reset):], pb[pIndex:])
-	copy(pb[pIndex:pIndex+len(reset)], reset)
-
-	// Set cursor to BOL
-	copy(pb[len(pb)-len("\r"):], "\r")
-
-	return string(pb)
 }
