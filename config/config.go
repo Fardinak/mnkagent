@@ -3,6 +3,7 @@ package config
 
 import (
 	"flag"
+	"fmt"
 )
 
 // GameConfig contains game-related configuration
@@ -27,6 +28,33 @@ type RLConfig struct {
 type Config struct {
 	Game GameConfig
 	RL   RLConfig
+}
+
+// Validate checks if the configuration is valid
+func (c *Config) Validate() error {
+	// Validate board dimensions
+	if c.Game.M <= 0 {
+		return fmt.Errorf("invalid board width (m): %d - must be positive", c.Game.M)
+	}
+	if c.Game.N <= 0 {
+		return fmt.Errorf("invalid board height (n): %d - must be positive", c.Game.N)
+	}
+	if c.Game.K <= 0 {
+		return fmt.Errorf("invalid win condition (k): %d - must be positive", c.Game.K)
+	}
+	
+	// Validate k in relation to board dimensions
+	if c.Game.K > c.Game.M && c.Game.K > c.Game.N {
+		return fmt.Errorf("win condition (k=%d) exceeds both board width (m=%d) and height (n=%d)", 
+			c.Game.K, c.Game.M, c.Game.N)
+	}
+	
+	// Validate model file path if not in no-learn mode
+	if !c.RL.NoLearn && c.RL.ModelFile == "" {
+		return fmt.Errorf("model file path cannot be empty when learning is enabled")
+	}
+	
+	return nil
 }
 
 // LoadFromArgs parses command-line arguments into configuration

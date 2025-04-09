@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"mnkagent/agents"
@@ -27,6 +28,12 @@ func main() {
 	// Load configuration
 	cfg := config.LoadFromArgs()
 
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		fmt.Printf("Configuration error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Initialize random seed
 	rand.Seed(time.Now().UTC().UnixNano())
 
@@ -40,8 +47,12 @@ func main() {
 	// Initialize RL knowledge
 	rlKnowledge := &agents.RLAgentKnowledge{}
 	readKnowledgeOK, err := rlKnowledge.LoadFromFile(cfg.RL.ModelFile)
-	if err != nil && !os.IsNotExist(err) {
-		fmt.Printf("Warning: Could not load RL model: %v\n", err)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Printf("Notice: No existing model file found at %s. A new one will be created.\n", cfg.RL.ModelFile)
+		} else {
+			fmt.Printf("Warning: Could not load RL model: %v\n", err)
+		}
 	}
 
 	// If model status mode is enabled, show stats and exit
@@ -141,13 +152,21 @@ func train(cfg *config.Config, board *game.MNKBoard, agents map[int]common.Agent
 	log := make([]int, 3)
 	fmt.Println("Commencing training...")
 
-	// Verify model file is accessible
+	// Verify model file is accessible and directory exists
+	modelDir := filepath.Dir(cfg.RL.ModelFile)
+	if modelDir != "." {
+		if err := os.MkdirAll(modelDir, 0755); err != nil {
+			fmt.Printf("Failed to create directory for model file: %v\n", err)
+			return log
+		}
+	}
+	
 	file, err := os.OpenFile(cfg.RL.ModelFile, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		fmt.Printf("Model file not accessible: %v\n", err)
 		return log
 	}
-	file.Close()
+	defer file.Close()
 
 	// Game state tracking
 	var turn int = 1
@@ -215,11 +234,22 @@ func play(cfg *config.Config, board *game.MNKBoard, agents map[int]common.Agent,
 
 	// Verify model file is accessible if learning is enabled
 	if !cfg.RL.NoLearn {
+		// Ensure directory exists
+		modelDir := filepath.Dir(cfg.RL.ModelFile)
+		if modelDir != "." {
+			if err := os.MkdirAll(modelDir, 0755); err != nil {
+				fmt.Printf("Failed to create directory for model file: %v\n", err)
+				// Continue anyway, but warn user
+			}
+		}
+		
+		// Try to open the file
 		file, err := os.OpenFile(cfg.RL.ModelFile, os.O_WRONLY|os.O_CREATE, 0644)
 		if err != nil {
-			fmt.Printf("Model file not accessible: %v\n", err)
+			fmt.Printf("Model file not accessible: %v\nLearning will continue but progress won't be saved.\n", err)
+		} else {
+			defer file.Close()
 		}
-		file.Close()
 	}
 
 	// Game loop
@@ -269,9 +299,26 @@ func newRound(board *game.MNKBoard, agents map[int]common.Agent, display *ui.Dis
 	for {
 		// Get current player's move
 		possibleActions := board.GetPotentialActions(turn)
+		
+		// Validate we have available actions
+		if len(possibleActions) == 0 {
+			display.ClearPrompt()
+			fmt.Printf("ERROR: No valid moves available for player %s (ID: %d)\n", agents[turn].GetSign(), turn)
+			return 0 // Draw
+		}
+		
+		// Get agent's move with better error context
 		action, err := agents[turn].FetchMove(board.GetState(), possibleActions)
 		if err != nil {
-			fmt.Printf("Error getting move from agent %d: %v\n", turn, err)
+			display.ClearPrompt()
+			fmt.Printf("Error getting move from agent %s (ID: %d): %v\n", agents[turn].GetSign(), turn, err)
+			
+			// For human agents, we'll retry. For AI agents, this is potentially a critical error
+			// Check if this is a human agent by ID (ID 1 is human by convention)
+			if turn != 1 { // Non-human agent
+				fmt.Println("Critical AI error - ending game")
+				return 0 // Force a draw to end the game
+			}
 			continue
 		}
 
