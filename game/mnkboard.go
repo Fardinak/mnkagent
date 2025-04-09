@@ -304,3 +304,18 @@ func (b *MNKBoard) Reset() {
 		b.board[i] = make([]int, b.m)
 	}
 }
+
+// GetWidth returns the board width (m)
+func (b *MNKBoard) GetWidth() int {
+	return b.m
+}
+
+// GetHeight returns the board height (n)
+func (b *MNKBoard) GetHeight() int {
+	return b.n
+}
+
+// GetWinLength returns the winning sequence length (k)
+func (b *MNKBoard) GetWinLength() int {
+	return b.k
+}

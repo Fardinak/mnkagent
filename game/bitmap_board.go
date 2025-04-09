@@ -205,6 +205,21 @@ func (b *MNKBitboard) Reset() {
 	b.lastMove.y = -1
 }
 
+// GetWidth returns the board width (m)
+func (b *MNKBitboard) GetWidth() int {
+	return b.m
+}
+
+// GetHeight returns the board height (n)
+func (b *MNKBitboard) GetHeight() int {
+	return b.n
+}
+
+// GetWinLength returns the winning sequence length (k)
+func (b *MNKBitboard) GetWinLength() int {
+	return b.k
+}
+
 // checkWin efficiently checks if the player has won by placing at position (x,y)
 func (b *MNKBitboard) checkWin(playerID, x, y int) bool {
 	return b.countInDirection(playerID, x, y, Horizontal) >= b.k ||
