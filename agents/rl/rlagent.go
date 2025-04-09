@@ -1,4 +1,4 @@
-package agents
+package rl
 
 import (
 	"encoding/gob"
@@ -213,7 +213,7 @@ func (agent *RLAgent) learn(qMax float64) {
 	}
 
 	// Get marshalled state representation
-	mState := marshallState(agent.id, agent.prev.state, agent.prev.action)
+	mState := MarshallState(agent.id, agent.prev.state, agent.prev.action)
 	oldVal, exists := agent.Knowledge.Values[mState]
 
 	// Apply Q-learning update formula: Q(s,a) = Q(s,a) + α * (r + γ * max(Q(s',a')) - Q(s,a))
@@ -230,7 +230,7 @@ func (agent *RLAgent) learn(qMax float64) {
 
 // lookup retrieves the Q-value for a state-action pair
 func (agent *RLAgent) lookup(state game.MNKState, action game.MNKAction) float64 {
-	mState := marshallState(agent.id, state, action)
+	mState := MarshallState(agent.id, state, action)
 	val, ok := agent.Knowledge.Values[mState]
 	if !ok {
 		val = agent.value(state, action)
@@ -268,8 +268,8 @@ func (agent *RLAgent) value(_ game.MNKState, action game.MNKAction) float64 {
 	}
 }
 
-// marshallState converts a board state and action to a string representation
-func marshallState(agentID int, state game.MNKState, action game.MNKAction) string {
+// MarshallState converts a board state and action to a string representation
+func MarshallState(agentID int, state game.MNKState, action game.MNKAction) string {
 	var result string
 	
 	for i := range state {

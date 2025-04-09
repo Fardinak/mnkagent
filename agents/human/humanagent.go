@@ -1,5 +1,5 @@
 // Package agents contains implementations of player agents
-package agents
+package human
 
 import (
 	"fmt"

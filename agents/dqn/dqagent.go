@@ -1,4 +1,4 @@
-package agents
+package dqn
 
 import (
 	"encoding/gob"
@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	agentscommon "mnkagent/agents/common"
+	"mnkagent/agents/rl"
 	"mnkagent/common"
 	"mnkagent/game"
 )
@@ -24,13 +26,13 @@ type DQNAgent struct {
 	m, n, k int
 	
 	// Knowledge base
-	Knowledge *RLAgentKnowledge
+	Knowledge *rl.RLAgentKnowledge
 	
 	// Neural network for value approximation
-	ValueNetwork *NeuralNetwork
+	ValueNetwork *agentscommon.NeuralNetwork
 	
 	// Experience replay buffer
-	ReplayBuffer *ExperienceBuffer
+	ReplayBuffer *agentscommon.ExperienceBuffer
 	
 	// State tracking
 	prev struct {
@@ -53,7 +55,7 @@ type DQNAgent struct {
 }
 
 // NewDQNAgent creates a new Deep Q-Network agent
-func NewDQNAgent(options common.AgentOptions, knowledge *RLAgentKnowledge) *DQNAgent {
+func NewDQNAgent(options common.AgentOptions, knowledge *rl.RLAgentKnowledge) *DQNAgent {
 	agent := &DQNAgent{
 		options: options,
 		stats: common.AgentStats{},
@@ -70,7 +72,7 @@ func NewDQNAgent(options common.AgentOptions, knowledge *RLAgentKnowledge) *DQNA
 	}
 	
 	// Initialize experience replay buffer with capacity of 10000
-	agent.ReplayBuffer = NewExperienceBuffer(10000)
+	agent.ReplayBuffer = agentscommon.NewExperienceBuffer(10000)
 	
 	return agent
 }
@@ -204,7 +206,7 @@ func (agent *DQNAgent) GameOver(state common.State) {
 			}
 			
 			// Add terminal experience
-			terminalExp := Experience{
+			terminalExp := agentscommon.Experience{
 				State:     agent.prev.state,
 				Action:    agent.prev.action,
 				Reward:    terminalReward,
@@ -307,7 +309,7 @@ func (agent *DQNAgent) SaveState(path string) error {
 	stateSnapshot := struct {
 		Options     common.AgentOptions
 		Stats       common.AgentStats
-		Knowledge   RLAgentKnowledge
+		Knowledge   rl.RLAgentKnowledge
 		BoardParams struct {
 			M, N, K int
 		}
@@ -342,7 +344,7 @@ func (agent *DQNAgent) LoadState(path string) error {
 	var stateSnapshot struct {
 		Options     common.AgentOptions
 		Stats       common.AgentStats
-		Knowledge   RLAgentKnowledge
+		Knowledge   rl.RLAgentKnowledge
 		BoardParams struct {
 			M, N, K int
 		}
@@ -442,7 +444,7 @@ func (agent *DQNAgent) Initialize(environment common.Environment) error {
 		hiddenSize := 128 // This can be adjusted based on board size and complexity
 		outputSize := 1   // Single output representing the value of the state
 		
-		agent.ValueNetwork = NewNeuralNetwork(inputSize, hiddenSize, outputSize, agent.options.LearningRate)
+		agent.ValueNetwork = agentscommon.NewNeuralNetwork(inputSize, hiddenSize, outputSize, agent.options.LearningRate)
 	}
 	
 	// Reset step counter
@@ -481,7 +483,7 @@ func (agent *DQNAgent) learn(qMax float64) {
 
 	// Store experience in replay buffer if it's available
 	if agent.ReplayBuffer != nil && len(agent.prev.nextState) > 0 {
-		experience := Experience{
+		experience := agentscommon.Experience{
 			State:     agent.prev.state,
 			Action:    agent.prev.action,
 			Reward:    agent.prev.reward,
@@ -505,7 +507,7 @@ func (agent *DQNAgent) learn(qMax float64) {
 
 	// Also perform traditional Q-learning update
 	// Get marshalled state representation
-	mState := marshallState(agent.options.ID, agent.prev.state, agent.prev.action)
+	mState := rl.MarshallState(agent.options.ID, agent.prev.state, agent.prev.action)
 	oldVal, exists := agent.Knowledge.Values[mState]
 
 	// Apply Q-learning update formula: Q(s,a) = Q(s,a) + α * (r + γ * max(Q(s',a')) - Q(s,a))
@@ -537,7 +539,7 @@ func (agent *DQNAgent) lookup(state game.MNKState, action game.MNKAction) float6
 	}
 	
 	// Traditional table-based lookup
-	mState := marshallState(agent.options.ID, state, action)
+	mState := rl.MarshallState(agent.options.ID, state, action)
 	val, ok := agent.Knowledge.Values[mState]
 	if !ok {
 		val = agent.value(state, action)
@@ -620,7 +622,7 @@ func min(a, b int) int {
 }
 
 // trainOnBatch trains the neural network on a batch of experiences
-func (agent *DQNAgent) trainOnBatch(batch []Experience) {
+func (agent *DQNAgent) trainOnBatch(batch []agentscommon.Experience) {
 	// Skip if batch is empty
 	if len(batch) == 0 {
 		return
