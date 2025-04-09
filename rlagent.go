@@ -175,7 +175,7 @@ func (agent *RLAgent) lookup(state MNKState, action MNKAction) float64 {
 }
 
 // value returns the reward for the given state
-func (agent *RLAgent) value(state MNKState, action MNKAction) float64 {
+func (agent *RLAgent) value(_ MNKState, action MNKAction) float64 {
 	// TODO: Fix this. The agent must have real access to the evaluation function
 	if action != (MNKAction{-1, -1}) {
 		switch board.EvaluateAction(agent.id, action) {
