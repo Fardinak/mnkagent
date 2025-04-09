@@ -11,8 +11,8 @@ import (
 	"mnkagent/game"
 )
 
-// EnhancedRLAgent implements the EnhancedAgent interface with reinforcement learning
-type EnhancedRLAgent struct {
+// DQNAgent implements Deep Q-Network reinforcement learning agent
+type DQNAgent struct {
 	// Basic agent properties
 	options common.AgentOptions
 	stats   common.AgentStats
@@ -26,27 +26,42 @@ type EnhancedRLAgent struct {
 	// Knowledge base
 	Knowledge *RLAgentKnowledge
 	
+	// Neural network for value approximation
+	ValueNetwork *NeuralNetwork
+	
+	// Experience replay buffer
+	ReplayBuffer *ExperienceBuffer
+	
 	// State tracking
 	prev struct {
 		state  game.MNKState
 		action game.MNKAction
 		reward float64
+		nextState game.MNKState
+		terminal bool
 	}
 	message string
 	
 	// Performance tracking
 	moveEvaluationTimes []time.Duration
 	decisionReasons     map[string]int
+	
+	// Neural network and replay configuration
+	batchSize int
+	updateFrequency int
+	stepCounter int
 }
 
-// NewEnhancedRLAgent creates a new enhanced RL agent
-func NewEnhancedRLAgent(options common.AgentOptions, knowledge *RLAgentKnowledge) *EnhancedRLAgent {
-	agent := &EnhancedRLAgent{
+// NewDQNAgent creates a new Deep Q-Network agent
+func NewDQNAgent(options common.AgentOptions, knowledge *RLAgentKnowledge) *DQNAgent {
+	agent := &DQNAgent{
 		options: options,
 		stats: common.AgentStats{},
 		Knowledge: knowledge,
 		moveEvaluationTimes: make([]time.Duration, 0, 100),
 		decisionReasons: make(map[string]int),
+		batchSize: 32,              // Default batch size for training
+		updateFrequency: 4,         // Update network every 4 steps
 	}
 	
 	// Initialize knowledge base if needed
@@ -54,23 +69,26 @@ func NewEnhancedRLAgent(options common.AgentOptions, knowledge *RLAgentKnowledge
 		knowledge.Values = make(map[string]float64)
 	}
 	
+	// Initialize experience replay buffer with capacity of 10000
+	agent.ReplayBuffer = NewExperienceBuffer(10000)
+	
 	return agent
 }
 
 // GetID returns the agent's ID
-func (agent *EnhancedRLAgent) GetID() int {
+func (agent *DQNAgent) GetID() int {
 	return agent.options.ID
 }
 
 // FetchMessage returns the agent's status message
-func (agent *EnhancedRLAgent) FetchMessage() string {
+func (agent *DQNAgent) FetchMessage() string {
 	message := agent.message
 	agent.message = ""
 	return message
 }
 
 // FetchMove determines the next move using the Q-learning algorithm
-func (agent *EnhancedRLAgent) FetchMove(state common.State, possibleActions []common.Action) (common.Action, error) {
+func (agent *DQNAgent) FetchMove(state common.State, possibleActions []common.Action) (common.Action, error) {
 	// Track performance metrics
 	startTime := time.Now()
 	defer func() {
@@ -129,16 +147,20 @@ func (agent *EnhancedRLAgent) FetchMove(state common.State, possibleActions []co
 		agent.learn(qMax)
 	}
 
+	// Get the immediate reward for this state-action pair
+	immediateReward := agent.value(s, action)
+	
 	// Save the current state and action for the next learning update
 	agent.prev.state = s
 	agent.prev.action = action
-	agent.prev.reward = agent.value(s, action)
+	agent.prev.reward = immediateReward
+	agent.prev.terminal = false // Will be updated in GameOver if needed
 
 	return action, nil
 }
 
 // GameOver handles the end of the game
-func (agent *EnhancedRLAgent) GameOver(state common.State) {
+func (agent *DQNAgent) GameOver(state common.State) {
 	s := state.(game.MNKState)
 	
 	// Update statistics
@@ -159,8 +181,44 @@ func (agent *EnhancedRLAgent) GameOver(state common.State) {
 	}
 
 	if agent.options.IsLearner {
+		// Mark the current state as terminal for experience replay
+		agent.prev.nextState = s
+		agent.prev.terminal = true
+		
 		// Final learning update using terminal state
 		agent.learn(agent.lookup(s, game.MNKAction{X: -1, Y: -1}))
+		
+		// Add final experience to replay buffer if available
+		if agent.ReplayBuffer != nil {
+			// Calculate terminal state reward
+			terminalReward := 0.0
+			switch result {
+			case agent.options.ID: // Agent won
+				terminalReward = 1.0
+			case -1: // Draw
+				terminalReward = -0.5
+			case 0: // Game interrupted
+				terminalReward = 0.0
+			default: // Agent lost
+				terminalReward = -1.0
+			}
+			
+			// Add terminal experience
+			terminalExp := Experience{
+				State:     agent.prev.state,
+				Action:    agent.prev.action,
+				Reward:    terminalReward,
+				NextState: s,
+				Terminal:  true,
+			}
+			agent.ReplayBuffer.Add(terminalExp)
+			
+			// Train on a batch if enough experiences are available
+			if agent.ValueNetwork != nil && agent.ReplayBuffer.Size >= agent.batchSize {
+				batch := agent.ReplayBuffer.Sample(agent.batchSize)
+				agent.trainOnBatch(batch)
+			}
+		}
 		
 		// Update learning stats
 		agent.stats.TrainingEpisodes++
@@ -179,6 +237,8 @@ func (agent *EnhancedRLAgent) GameOver(state common.State) {
 	agent.prev.state = game.MNKState{}
 	agent.prev.action = game.MNKAction{}
 	agent.prev.reward = 0
+	agent.prev.nextState = game.MNKState{}
+	agent.prev.terminal = false
 	agent.message = ""
 
 	// Increment iteration counter
@@ -186,17 +246,17 @@ func (agent *EnhancedRLAgent) GameOver(state common.State) {
 }
 
 // GetSign returns the character representing this player on the board
-func (agent *EnhancedRLAgent) GetSign() string {
+func (agent *DQNAgent) GetSign() string {
 	return agent.options.Sign
 }
 
 // GetOptions returns the agent's configuration options
-func (agent *EnhancedRLAgent) GetOptions() common.AgentOptions {
+func (agent *DQNAgent) GetOptions() common.AgentOptions {
 	return agent.options
 }
 
 // SetOptions updates the agent's configuration
-func (agent *EnhancedRLAgent) SetOptions(options common.AgentOptions) error {
+func (agent *DQNAgent) SetOptions(options common.AgentOptions) error {
 	// Validate option values
 	if options.LearningRate < 0 || options.LearningRate > 1 {
 		return fmt.Errorf("invalid learning rate: %f (must be between 0 and 1)", options.LearningRate)
@@ -214,29 +274,29 @@ func (agent *EnhancedRLAgent) SetOptions(options common.AgentOptions) error {
 }
 
 // GetCapabilities returns the agent's supported capabilities
-func (agent *EnhancedRLAgent) GetCapabilities() common.AgentCapabilities {
+func (agent *DQNAgent) GetCapabilities() common.AgentCapabilities {
 	return common.Learning | common.StateExport | common.StateImport | common.Explainable
 }
 
 // Supports checks if the agent supports a specific capability
-func (agent *EnhancedRLAgent) Supports(capability common.AgentCapabilities) bool {
+func (agent *DQNAgent) Supports(capability common.AgentCapabilities) bool {
 	return (agent.GetCapabilities() & capability) == capability
 }
 
 // GetStats returns the agent's performance statistics
-func (agent *EnhancedRLAgent) GetStats() common.AgentStats {
+func (agent *DQNAgent) GetStats() common.AgentStats {
 	return agent.stats
 }
 
 // ResetStats clears the agent's statistics
-func (agent *EnhancedRLAgent) ResetStats() {
+func (agent *DQNAgent) ResetStats() {
 	agent.stats = common.AgentStats{}
 	agent.moveEvaluationTimes = make([]time.Duration, 0, 100)
 	agent.decisionReasons = make(map[string]int)
 }
 
 // SaveState persists the agent's state to a file
-func (agent *EnhancedRLAgent) SaveState(path string) error {
+func (agent *DQNAgent) SaveState(path string) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed to create state file: %w", err)
@@ -271,7 +331,7 @@ func (agent *EnhancedRLAgent) SaveState(path string) error {
 }
 
 // LoadState loads the agent's state from a file
-func (agent *EnhancedRLAgent) LoadState(path string) error {
+func (agent *DQNAgent) LoadState(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open state file: %w", err)
@@ -307,7 +367,7 @@ func (agent *EnhancedRLAgent) LoadState(path string) error {
 }
 
 // ExplainMove provides an explanation of why the agent chose a particular move
-func (agent *EnhancedRLAgent) ExplainMove(state common.State, action common.Action) string {
+func (agent *DQNAgent) ExplainMove(state common.State, action common.Action) string {
 	s := state.(game.MNKState)
 	a := action.GetParams().(game.MNKAction)
 	
@@ -344,7 +404,7 @@ func (agent *EnhancedRLAgent) ExplainMove(state common.State, action common.Acti
 }
 
 // Initialize prepares the agent for a new set of games
-func (agent *EnhancedRLAgent) Initialize(environment common.Environment) error {
+func (agent *DQNAgent) Initialize(environment common.Environment) error {
 	agent.environment = environment
 	
 	// Extract board dimensions
@@ -373,11 +433,36 @@ func (agent *EnhancedRLAgent) Initialize(environment common.Environment) error {
 		}
 	}
 	
+	// Initialize neural network if not already initialized
+	if agent.ValueNetwork == nil {
+		// Input size: flattened board state (m*n*3 for three possible states: empty, player, opponent)
+		inputSize := agent.m * agent.n * 3
+		
+		// Create a neural network with one hidden layer
+		hiddenSize := 128 // This can be adjusted based on board size and complexity
+		outputSize := 1   // Single output representing the value of the state
+		
+		agent.ValueNetwork = NewNeuralNetwork(inputSize, hiddenSize, outputSize, agent.options.LearningRate)
+	}
+	
+	// Reset step counter
+	agent.stepCounter = 0
+	
 	return nil
 }
 
+// SetBatchSize sets the batch size for training
+func (agent *DQNAgent) SetBatchSize(size int) {
+	agent.batchSize = size
+}
+
+// SetUpdateFrequency sets how often to update the network
+func (agent *DQNAgent) SetUpdateFrequency(freq int) {
+	agent.updateFrequency = freq
+}
+
 // Cleanup releases resources when agent is no longer needed
-func (agent *EnhancedRLAgent) Cleanup() error {
+func (agent *DQNAgent) Cleanup() error {
 	// Auto-save if model file is specified
 	if agent.options.ModelFile != "" && agent.options.IsLearner {
 		return agent.SaveState(agent.options.ModelFile)
@@ -388,12 +473,37 @@ func (agent *EnhancedRLAgent) Cleanup() error {
 // Helper functions
 
 // learn updates Q-values based on the current state-action pair
-func (agent *EnhancedRLAgent) learn(qMax float64) {
+func (agent *DQNAgent) learn(qMax float64) {
 	// Ignore empty state (happens on first move)
 	if len(agent.prev.state) == 0 {
 		return
 	}
 
+	// Store experience in replay buffer if it's available
+	if agent.ReplayBuffer != nil && len(agent.prev.nextState) > 0 {
+		experience := Experience{
+			State:     agent.prev.state,
+			Action:    agent.prev.action,
+			Reward:    agent.prev.reward,
+			NextState: agent.prev.nextState,
+			Terminal:  agent.prev.terminal,
+		}
+		agent.ReplayBuffer.Add(experience)
+	}
+
+	// Increment step counter
+	agent.stepCounter++
+
+	// Train neural network periodically if it's available
+	if agent.ValueNetwork != nil && agent.ReplayBuffer != nil && 
+	   agent.stepCounter % agent.updateFrequency == 0 && 
+	   agent.ReplayBuffer.Size >= agent.batchSize {
+		// Sample batch from replay buffer
+		batch := agent.ReplayBuffer.Sample(agent.batchSize)
+		agent.trainOnBatch(batch)
+	}
+
+	// Also perform traditional Q-learning update
 	// Get marshalled state representation
 	mState := marshallState(agent.options.ID, agent.prev.state, agent.prev.action)
 	oldVal, exists := agent.Knowledge.Values[mState]
@@ -411,7 +521,22 @@ func (agent *EnhancedRLAgent) learn(qMax float64) {
 }
 
 // lookup retrieves the Q-value for a state-action pair
-func (agent *EnhancedRLAgent) lookup(state game.MNKState, action game.MNKAction) float64 {
+func (agent *DQNAgent) lookup(state game.MNKState, action game.MNKAction) float64 {
+	// If neural network is available, use it for value approximation
+	if agent.ValueNetwork != nil {
+		// Convert state to neural network input format
+		inputs := agent.boardToInput(state, action)
+		
+		// Get prediction from neural network
+		outputs, err := agent.ValueNetwork.Predict(inputs)
+		if err == nil && len(outputs) > 0 {
+			// Neural network outputs value between 0-1, rescale to [-1,1]
+			return outputs[0]*2 - 1
+		}
+		// Fall back to table lookup if neural network fails
+	}
+	
+	// Traditional table-based lookup
 	mState := marshallState(agent.options.ID, state, action)
 	val, ok := agent.Knowledge.Values[mState]
 	if !ok {
@@ -422,7 +547,7 @@ func (agent *EnhancedRLAgent) lookup(state game.MNKState, action game.MNKAction)
 }
 
 // value calculates the immediate reward for a state-action pair
-func (agent *EnhancedRLAgent) value(_ game.MNKState, action game.MNKAction) float64 {
+func (agent *DQNAgent) value(_ game.MNKState, action game.MNKAction) float64 {
 	// Special case for terminal state evaluation
 	if action == (game.MNKAction{X: -1, Y: -1}) {
 		switch agent.environment.Evaluate() {
@@ -492,4 +617,97 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// trainOnBatch trains the neural network on a batch of experiences
+func (agent *DQNAgent) trainOnBatch(batch []Experience) {
+	// Skip if batch is empty
+	if len(batch) == 0 {
+		return
+	}
+
+	// Process each experience in the batch
+	for _, experience := range batch {
+		// Get current state-action value
+		currentInputs := agent.boardToInput(experience.State, experience.Action)
+		
+		// Calculate target value
+		targetValue := experience.Reward
+		
+		// If not terminal state, add discounted future value
+		if !experience.Terminal {
+			// Find max Q value for next state
+			var maxQ float64
+			var first = true
+			
+			// Check all possible actions from the next state
+			for i := range experience.NextState {
+				for j := range experience.NextState[i] {
+					if experience.NextState[i][j] == 0 {
+						nextAction := game.MNKAction{Y: i, X: j}
+						q := agent.lookup(experience.NextState, nextAction)
+						
+						if q > maxQ || first {
+							maxQ = q
+							first = false
+						}
+					}
+				}
+			}
+			
+			// Add discounted future value
+			targetValue += agent.options.DiscountFactor * maxQ
+		}
+		
+		// Scale target value from [-1,1] to [0,1] for neural network
+		targetValue = (targetValue + 1) / 2
+		targets := []float64{targetValue}
+		
+		// Train the neural network
+		_ = agent.ValueNetwork.Train(currentInputs, targets)
+	}
+}
+
+// boardToInput converts a board state to neural network input format
+func (agent *DQNAgent) boardToInput(state game.MNKState, action game.MNKAction) []float64 {
+	// Create input vector with one-hot encoding for each cell
+	// For each cell: [1,0,0] = empty, [0,1,0] = player, [0,0,1] = opponent
+	inputSize := agent.m * agent.n * 3
+	inputs := make([]float64, inputSize)
+	
+	// Apply the action to the state to get the resulting state
+	stateCopy := make(game.MNKState, len(state))
+	for i := range state {
+		stateCopy[i] = make([]int, len(state[i]))
+		copy(stateCopy[i], state[i])
+	}
+	
+	// Apply action if it's a valid one
+	if action.X >= 0 && action.Y >= 0 && 
+	   action.Y < len(stateCopy) && action.X < len(stateCopy[0]) && 
+	   stateCopy[action.Y][action.X] == 0 {
+		stateCopy[action.Y][action.X] = agent.options.ID
+	}
+	
+	// Convert the state to input format
+	for i := 0; i < agent.n; i++ {
+		for j := 0; j < agent.m; j++ {
+			baseIdx := (i*agent.m + j) * 3
+			if i < len(stateCopy) && j < len(stateCopy[i]) {
+				switch stateCopy[i][j] {
+				case 0: // Empty cell
+					inputs[baseIdx] = 1.0
+				case agent.options.ID: // Agent's piece
+					inputs[baseIdx+1] = 1.0
+				default: // Opponent's piece
+					inputs[baseIdx+2] = 1.0
+				}
+			} else {
+				// Default to empty if out of bounds
+				inputs[baseIdx] = 1.0
+			}
+		}
+	}
+	
+	return inputs
 }

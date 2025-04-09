@@ -109,19 +109,58 @@ func main() {
 		}()
 		defer close(sigint)
 
-		// Setup RL agents for training
-		p1 := agents.NewRLAgent(1, X, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, true)
-		p1.LearningRate = 0.2
-		p1.DiscountFactor = 0.8
-		p1.ExplorationFactor = 0.25
-		
-		p2 := agents.NewRLAgent(2, O, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, true)
-		p2.LearningRate = 0.2
-		p2.DiscountFactor = 0.8
-		p2.ExplorationFactor = 0.25
+		// Setup agents for training based on selected agent type
+		switch cfg.AgentType {
+		case "dqn":
+			// Create DQN agents for training (both agents must be same type)
+			dqnOptions1 := common.AgentOptions{
+				ID:               1,
+				Sign:             X,
+				IsLearner:        true,
+				LearningRate:     0.01,
+				DiscountFactor:   0.95,
+				ExplorationFactor: 0.25,
+				ModelFile:        cfg.DQN.ModelFile,
+			}
+			
+			dqnOptions2 := common.AgentOptions{
+				ID:               2,
+				Sign:             O,
+				IsLearner:        true,
+				LearningRate:     0.01,
+				DiscountFactor:   0.95,
+				ExplorationFactor: 0.25,
+				ModelFile:        cfg.DQN.ModelFile,
+			}
+			
+			p1 := agents.NewDQNAgent(dqnOptions1, rlKnowledge)
+			p1.SetBatchSize(cfg.DQN.BatchSize)
+			p1.SetUpdateFrequency(cfg.DQN.UpdateFrequency)
+			p1.ReplayBuffer = agents.NewExperienceBuffer(cfg.DQN.ReplaySize)
+			
+			p2 := agents.NewDQNAgent(dqnOptions2, rlKnowledge)
+			p2.SetBatchSize(cfg.DQN.BatchSize)
+			p2.SetUpdateFrequency(cfg.DQN.UpdateFrequency)
+			p2.ReplayBuffer = agents.NewExperienceBuffer(cfg.DQN.ReplaySize)
+			
+			agentMap[1] = p1
+			agentMap[2] = p2
+			
+		default: // "rl" is the default
+			// Setup RL agents for training
+			p1 := agents.NewRLAgent(1, X, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, true)
+			p1.LearningRate = 0.2
+			p1.DiscountFactor = 0.8
+			p1.ExplorationFactor = 0.25
+			
+			p2 := agents.NewRLAgent(2, O, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, true)
+			p2.LearningRate = 0.2
+			p2.DiscountFactor = 0.8
+			p2.ExplorationFactor = 0.25
 
-		agentMap[1] = p1
-		agentMap[2] = p2
+			agentMap[1] = p1
+			agentMap[2] = p2
+		}
 
 		// Start training
 		log := train(cfg, board, agentMap, display, rlKnowledge, &terminateFlag)
@@ -131,7 +170,31 @@ func main() {
 
 	// Setup for normal play mode
 	agentMap[1] = agents.NewHumanAgent(1, X, cfg.Game.M, cfg.Game.N)
-	agentMap[2] = agents.NewRLAgent(2, O, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, !cfg.RL.NoLearn)
+	
+	// Create agent based on selected type
+	switch cfg.AgentType {
+	case "dqn":
+		// Create DQN agent options
+		dqnOptions := common.AgentOptions{
+			ID:               2,
+			Sign:             O,
+			IsLearner:        !cfg.NoLearn, // Use global NoLearn flag
+			LearningRate:     0.01,
+			DiscountFactor:   0.95,
+			ExplorationFactor: 0.1,
+			ModelFile:        cfg.DQN.ModelFile,
+		}
+		// Create DQN agent
+		dqnAgent := agents.NewDQNAgent(dqnOptions, rlKnowledge)
+		// Set batch size and update frequency from config
+		dqnAgent.SetBatchSize(cfg.DQN.BatchSize)
+		dqnAgent.SetUpdateFrequency(cfg.DQN.UpdateFrequency)
+		// Initialize replay buffer with specified size
+		dqnAgent.ReplayBuffer = agents.NewExperienceBuffer(cfg.DQN.ReplaySize)
+		agentMap[2] = dqnAgent
+	default: // "rl" is the default
+		agentMap[2] = agents.NewRLAgent(2, O, cfg.Game.M, cfg.Game.N, cfg.Game.K, board, rlKnowledge, !cfg.NoLearn) // Use global NoLearn flag
+	}
 
 	// Ask for number of rounds
 	fmt.Printf("? > How many rounds shall we play? ")
